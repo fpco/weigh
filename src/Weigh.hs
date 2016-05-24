@@ -27,6 +27,7 @@ import System.Environment
 import System.Exit
 import System.Mem
 import System.Process
+import Text.Printf
 
 --------------------------------------------------------------------------------
 -- Types
@@ -67,6 +68,7 @@ mainWith m =
                            Nothing -> (w,Nothing)
                            Just a -> (w,actionCheck a w))
                       weights
+            putStrLn ""
             putStrLn (report results)
 
 --------------------------------------------------------------------------------
@@ -136,22 +138,28 @@ weighAction run =
 
 -- | Make a report of the weights.
 report :: [(Weight,Maybe String)] -> String
-report = tablize . (["Case","Bytes","GCs","Check"] :) . map toRow
+report =
+  tablize .
+  ([(True,"Case"),(False,"Bytes"),(False,"GCs"),(True,"Check")] :) . map toRow
   where toRow (w,err) =
-          [weightLabel w
-          ,commas (weightAllocatedBytes w)
-          ,commas (weightGCs w)
-          ,case err of
-             Nothing -> "OK"
-             Just{} -> "INVALID"]
+          [(True,weightLabel w)
+          ,(False,commas (weightAllocatedBytes w))
+          ,(False,commas (weightGCs w))
+          ,(True
+           ,case err of
+              Nothing -> "OK"
+              Just{} -> "INVALID")]
 
 -- | Make a table out of a list of rows.
-tablize :: [[String]] -> String
+tablize :: [[(Bool,String)]] -> String
 tablize xs =
   intercalate "\n"
               (map (intercalate "  " . map fill . zip [0 ..]) xs)
-  where fill (x',text') = take width (text' ++ repeat ' ')
-          where width = maximum (map (length . (!! x')) xs)
+  where fill (x',(left,text')) = printf ("%" ++ direction ++ show width ++ "s") text'
+          where direction = if left
+                               then "-"
+                               else ""
+                width = maximum (map (length . snd . (!! x')) xs)
 
 -- | Formatting an integral number to 1,000,000, etc.
 commas :: (Num a,Integral a,Show a) => a -> String

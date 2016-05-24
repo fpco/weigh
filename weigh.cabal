@@ -20,7 +20,6 @@ library
   build-depends:       base >= 4.7 && < 5
                      , process
                      , deepseq
-                     , formatting
                      , mtl
                      , split
                      , ghc-heap-view
