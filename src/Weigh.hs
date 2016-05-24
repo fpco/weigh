@@ -14,6 +14,7 @@ module Weigh
   ,mainWith)
   where
 
+import Control.Applicative
 import Control.DeepSeq
 import Control.Monad.Writer
 import Data.List
@@ -21,6 +22,7 @@ import Formatting
 import GHC.HeapView (getClosureRaw)
 import GHC.Int
 import GHC.Stats
+import Prelude
 import System.Environment
 import System.Exit
 import System.Mem
