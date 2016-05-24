@@ -18,7 +18,7 @@ import Control.Applicative
 import Control.DeepSeq
 import Control.Monad.Writer
 import Data.List
-import Formatting
+import Data.List.Split
 import GHC.HeapView (getClosureRaw)
 import GHC.Int
 import GHC.Stats
@@ -28,22 +28,15 @@ import System.Exit
 import System.Mem
 import System.Process
 
+--------------------------------------------------------------------------------
+-- Types
+
 -- | Weigh specification monad.
 newtype Weigh a =
   Weigh {runWeigh :: Writer [(String,Action)] a}
   deriving (Monad,Functor,Applicative)
 
--- | Write an action out.
-action :: NFData a => String -> IO a -> Weigh ()
-action name m = Weigh (tell [(name,Action m (const Nothing))])
-
--- | Write an action out.
-check
-  :: NFData a
-  => String -> (Weight -> Maybe String) -> IO a -> Weigh ()
-check name validate m = Weigh (tell [(name,Action m validate)])
-
--- | A Weight of we
+-- | How much a computation weighed in at.
 data Weight =
   Weight {weightLabel :: !String
          ,weightAllocatedBytes :: !Int64
@@ -52,8 +45,12 @@ data Weight =
 
 -- | An action to run.
 data Action =
-  forall a. NFData a => Action {_actionRun :: IO a
-                               ,actionCheck :: Weight -> Maybe String}
+  forall a. NFData a =>
+  Action {_actionRun :: IO a
+         ,actionCheck :: Weight -> Maybe String}
+
+--------------------------------------------------------------------------------
+-- Main-runners
 
 -- | Just run the measuring and print a report.
 mainWith :: Weigh a -> IO ()
@@ -72,25 +69,19 @@ mainWith m =
                       weights
             putStrLn (report results)
 
--- | Make a report of the weights.
-report :: [(Weight,Maybe String)] -> String
-report = tablize . (["Case","Bytes","GCs","Check"] :) . map toRow
-  where toRow (w,err) =
-          [weightLabel w
-          ,formatToString commas
-                          (weightAllocatedBytes w)
-          ,show (weightGCs w)
-          ,case err of
-             Nothing -> "OK"
-             Just {} -> "INVALID"]
+--------------------------------------------------------------------------------
+-- User DSL
 
--- | Make a table out of a list of rows.
-tablize :: [[String]] -> String
-tablize xs =
-  intercalate "\n"
-              (map (intercalate "  " . map fill . zip [0 ..]) xs)
-  where fill (x',text') = take width (text' ++ repeat ' ')
-          where width = maximum (map (length . (!! x')) xs)
+-- | Write an action out.
+action :: NFData a => String -> IO a -> Weigh ()
+action name m = Weigh (tell [(name,Action m (const Nothing))])
+
+-- | Write an action out.
+check :: NFData a => String -> (Weight -> Maybe String) -> IO a -> Weigh ()
+check name validate m = Weigh (tell [(name,Action m validate)])
+
+--------------------------------------------------------------------------------
+-- Internal measuring actions
 
 -- | Weigh a set of actions. The value of the actions are forced
 -- completely to ensure they are fully allocated.
@@ -103,23 +94,10 @@ weigh args cases =
         Just act ->
           do case act of
                Action !run _ ->
-                 do performGC
-                    !bootupStats <- getGCStats
-                    !_ <- fmap force run
-                    performGC
-                    !actionStats <- getGCStats
-                    reflectionBytes <- ghcStatsSize bootupStats
-                    let reflectionGCs = 2
-                        actionBytes =
-                          bytesAllocated actionStats -
-                          bytesAllocated bootupStats -
-                          reflectionBytes
-                        actionGCs =
-                          numGcs actionStats -
-                          reflectionGCs
+                 do (bytes,gcs) <- weighAction run
                     print (Weight {weightLabel = label
-                                  ,weightAllocatedBytes = actionBytes
-                                  ,weightGCs = actionGCs})
+                                  ,weightAllocatedBytes = bytes
+                                  ,weightGCs = gcs})
              return Nothing
     _ -> fmap Just (mapM (fork . fst) cases)
 
@@ -136,6 +114,48 @@ fork label =
        ExitSuccess ->
          let !r = read out
          in return r
+
+-- | Weigh an action.
+weighAction :: NFData a => IO a -> IO (Int64, Int64)
+weighAction run =
+  do performGC
+     !bootupStats <- getGCStats
+     !_ <- fmap force run
+     performGC
+     !actionStats <- getGCStats
+     reflectionBytes <- ghcStatsSize bootupStats
+     let reflectionGCs = 2
+         actionBytes =
+           bytesAllocated actionStats - bytesAllocated bootupStats -
+           reflectionBytes
+         actionGCs = numGcs actionStats - reflectionGCs
+     return (actionBytes,actionGCs)
+
+--------------------------------------------------------------------------------
+-- Formatting functions
+
+-- | Make a report of the weights.
+report :: [(Weight,Maybe String)] -> String
+report = tablize . (["Case","Bytes","GCs","Check"] :) . map toRow
+  where toRow (w,err) =
+          [weightLabel w
+          ,commas (weightAllocatedBytes w)
+          ,commas (weightGCs w)
+          ,case err of
+             Nothing -> "OK"
+             Just{} -> "INVALID"]
+
+-- | Make a table out of a list of rows.
+tablize :: [[String]] -> String
+tablize xs =
+  intercalate "\n"
+              (map (intercalate "  " . map fill . zip [0 ..]) xs)
+  where fill (x',text') = take width (text' ++ repeat ' ')
+          where width = maximum (map (length . (!! x')) xs)
+
+-- | Formatting an integral number to 1,000,000, etc.
+commas :: (Num a,Integral a,Show a) => a -> String
+commas = reverse . intercalate "," . chunksOf 3 . reverse . show
 
 --------------------------------------------------------------------------------
 -- Memory utilities
