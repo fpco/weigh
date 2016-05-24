@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -13,15 +14,17 @@ module Weigh
   ,mainWith)
   where
 
-import           Control.DeepSeq
-import           Control.Monad.Writer
-import           Data.List
-import           Formatting
-import           GHC.Int
-import           GHC.Stats
-import           System.Environment
-import           System.Exit
-import           System.Process
+import Control.DeepSeq
+import Control.Monad.Writer
+import Data.List
+import Formatting
+import GHC.HeapView (getClosureRaw)
+import GHC.Int
+import GHC.Stats
+import System.Environment
+import System.Exit
+import System.Mem
+import System.Process
 
 -- | Weigh specification monad.
 newtype Weigh a =
@@ -93,16 +96,28 @@ weigh :: [String] -> [(String,Action)] -> IO (Maybe [Weight])
 weigh args cases =
   case args of
     ("--case":label:_) ->
-      case lookup label cases of
+      case lookup label (deepseq (map fst cases) cases) of
         Nothing -> error "No such case!"
         Just act ->
           do case act of
-               Action run _ ->
-                 do !_ <- fmap force run
-                    stats <- getGCStats
+               Action !run _ ->
+                 do performGC
+                    !bootupStats <- getGCStats
+                    !_ <- fmap force run
+                    performGC
+                    !actionStats <- getGCStats
+                    reflectionBytes <- ghcStatsSize bootupStats
+                    let reflectionGCs = 2
+                        actionBytes =
+                          bytesAllocated actionStats -
+                          bytesAllocated bootupStats -
+                          reflectionBytes
+                        actionGCs =
+                          numGcs actionStats - numGcs bootupStats -
+                          reflectionGCs
                     print (Weight {weightLabel = label
-                                  ,weightAllocatedBytes = bytesAllocated stats
-                                  ,weightGCs = numGcs stats})
+                                  ,weightAllocatedBytes = max 0 actionBytes
+                                  ,weightGCs = max 0 actionGCs})
              return Nothing
     _ -> fmap Just (mapM (fork . fst) cases)
 
@@ -119,3 +134,17 @@ fork label =
        ExitSuccess ->
          let !r = read out
          in return r
+
+--------------------------------------------------------------------------------
+-- Memory utilities
+
+-- This used to be available via GHC.Constants
+#include "MachDeps.h"
+wORD_SIZE :: Int
+wORD_SIZE = SIZEOF_HSWORD
+
+-- | Calculate size of GHC objects in Bytes.
+ghcStatsSize :: GCStats -> IO Int64
+ghcStatsSize !x =
+  do (_,y,_) <- getClosureRaw x
+     return . fromIntegral $ length y * wORD_SIZE
