@@ -1,20 +1,25 @@
 name:                weigh
-version:             0.1.0.0
-synopsis:            Initial project template from stack
+version:             0.0.0
+synopsis:            Measures the memory usage of a Haskell value or function
 description:         Please see README.md
-homepage:            https://github.com/chrisdone/weigh#readme
+homepage:            https://github.com/fpco/weigh#readme
 license:             BSD3
 license-file:        LICENSE
 author:              Chris Done
-maintainer:          chrisdone@gmail.com
-copyright:           2015 Chris Done
+maintainer:          chrisdone@fpcomplete.com
+copyright:           FP Complete
 category:            Web
 build-type:          Simple
--- extra-source-files:
+extra-source-files:  README.md
 cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
   exposed-modules:     Weigh
-  build-depends:       base >= 4.7 && < 5, process, deepseq, formatting, mtl, split
+  build-depends:       base >= 4.7 && < 5
+                     , process
+                     , deepseq
+                     , formatting
+                     , mtl
+                     , split
   default-language:    Haskell2010
