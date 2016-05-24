@@ -5,7 +5,13 @@
 
 -- | Framework for seeing how much a function allocates.
 
-module Weigh (Weigh, Weight(..), action, check, mainWith) where
+module Weigh
+  (Weigh
+  ,Weight(..)
+  ,action
+  ,check
+  ,mainWith)
+  where
 
 import           Control.DeepSeq
 import           Control.Monad.Writer
