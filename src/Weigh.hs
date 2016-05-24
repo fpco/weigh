@@ -113,11 +113,11 @@ weigh args cases =
                           bytesAllocated bootupStats -
                           reflectionBytes
                         actionGCs =
-                          numGcs actionStats - numGcs bootupStats -
+                          numGcs actionStats -
                           reflectionGCs
                     print (Weight {weightLabel = label
-                                  ,weightAllocatedBytes = max 0 actionBytes
-                                  ,weightGCs = max 0 actionGCs})
+                                  ,weightAllocatedBytes = actionBytes
+                                  ,weightGCs = actionGCs})
              return Nothing
     _ -> fmap Just (mapM (fork . fst) cases)
 
