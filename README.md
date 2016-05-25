@@ -4,7 +4,7 @@ Measures the memory usage of a Haskell value or function
 
 ## Example use
 
-```
+``` haskell
 import Weigh
 
 -- | Weigh integers.
