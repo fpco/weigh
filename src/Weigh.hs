@@ -7,11 +7,16 @@
 -- | Framework for seeing how much a function allocates.
 
 module Weigh
-  (Weigh
+  (-- * Main entry point.
+   mainWith
+   -- * Types
+  ,Weigh
   ,Weight(..)
+  -- * Combinators
   ,action
   ,check
-  ,mainWith)
+  ,allocs
+  ,confirm)
   where
 
 import Control.Applicative
@@ -19,6 +24,7 @@ import Control.DeepSeq
 import Control.Monad.Writer
 import Data.List
 import Data.List.Split
+import Data.Maybe
 import GHC.HeapView (getClosureRaw)
 import GHC.Int
 import GHC.Stats
@@ -70,6 +76,17 @@ mainWith m =
                       weights
             putStrLn ""
             putStrLn (report results)
+            case mapMaybe (\(w,r) ->
+                             do msg <- r
+                                return (w,msg))
+                          results of
+              [] -> return ()
+              errors ->
+                do putStrLn "\nCheck problems:"
+                   mapM_ (\(w,r) ->
+                            putStrLn ("  " ++ weightLabel w ++ "\n    " ++ r))
+                         errors
+                   exitWith (ExitFailure (-1))
 
 --------------------------------------------------------------------------------
 -- User DSL
@@ -78,9 +95,30 @@ mainWith m =
 action :: NFData a => String -> IO a -> Weigh ()
 action name m = Weigh (tell [(name,Action m (const Nothing))])
 
--- | Write an action out.
+-- | Write an action out. See 'confirm' for a handy combinator.
 check :: NFData a => String -> (Weight -> Maybe String) -> IO a -> Weigh ()
 check name validate m = Weigh (tell [(name,Action m validate)])
+
+-- | Define an upperbound on the allocations.
+allocs :: NFData a => String -> Int64 -> IO a -> Weigh ()
+allocs name n m =
+  check name
+        (\w ->
+           if weightAllocatedBytes w <= n
+              then Nothing
+              else Just ("Allocated " ++
+                         commas (weightAllocatedBytes w) ++
+                         " bytes, exceeded upper bound of " ++
+                         commas n ++ " bytes."))
+        m
+
+-- | Confirm that a predicate passes. If it fails, return the error
+-- message. Handy for use with 'check'.
+confirm :: String -> (a -> Bool) -> a -> Maybe String
+confirm label predicate a =
+  if predicate a
+     then Nothing
+     else Just label
 
 --------------------------------------------------------------------------------
 -- Internal measuring actions

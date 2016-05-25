@@ -2,11 +2,62 @@
 
 Measures the memory usage of a Haskell value or function
 
-## Example output
+## Example use
+
+```
+import Weigh
+
+-- | Weigh integers.
+main :: IO ()
+main =
+  mainWith (do integers
+               ints)
+
+-- | Just counting integers.
+integers :: Weigh ()
+integers =
+  do action "integers count 1" (return (count 1))
+     action "integers count 10" (return (count 10))
+     action "integers count 100" (return (count 100))
+  where count :: Integer -> ()
+        count 0 = ()
+        count a = count (a - 1)
+
+-- | We count ints and ensure that the allocations are optimized away
+-- to only two 64-bit Ints (16 bytes).
+ints :: Weigh ()
+ints =
+  do allocs "ints count 1" 16 (return (count 1))
+     allocs "ints count 10" 16 (return (count 10))
+     allocs "ints count 1000000" 16 (return (count 1000000))
+  where count :: Int -> ()
+        count 0 = ()
+        count a = count (a - 1)
+```
+
+Output results:
+
+```
+Case                Bytes  GCs  Check
+integers count 1       48    0  OK
+integers count 10     336    0  OK
+integers count 100  3,216    0  OK
+ints count 1           16    0  OK
+ints count 10          16    0  OK
+ints count 1000000     16    0  OK
+```
+
+You can try this out with `stack test` in the `weight` directory.
+
+## Real-world use-case
 
 This is the output for the Store package to measure allocation of
 three data structure types, and encoding them to binary with the Store
 package vs the Cereal package.
+
+We can see that the Cereal package is inefficient with allocations. It
+generates 3GB, 6GB and 6.5GB for 10 million integers in `[Int]`,
+`Vector Int` and `Storable.Vector Int` respectively.
 
 ```
 Case                                                      Bytes     GCs  Check
