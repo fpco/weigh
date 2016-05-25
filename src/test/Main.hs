@@ -13,7 +13,8 @@ main =
 -- | Just counting integers.
 integers :: Weigh ()
 integers =
-  do action "integers count 1" (return (count 1))
+  do action "integers count 0" (return (count 0))
+     action "integers count 1" (return (count 1))
      action "integers count 10" (return (count 10))
      action "integers count 100" (return (count 100))
   where count :: Integer -> ()
