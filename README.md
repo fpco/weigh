@@ -16,10 +16,12 @@ main =
 -- | Just counting integers.
 integers :: Weigh ()
 integers =
-  do action "integers count 0" (return (count 0))
-     action "integers count 1" (return (count 1))
-     action "integers count 10" (return (count 10))
-     action "integers count 100" (return (count 100))
+  do func "integers count 0" count 0
+     func "integers count 1" count 1
+     func "integers count 2" count 2
+     func "integers count 3" count 3
+     func "integers count 10" count 10
+     func "integers count 100" count 100
   where count :: Integer -> ()
         count 0 = ()
         count a = count (a - 1)
@@ -28,9 +30,9 @@ integers =
 -- to only two 64-bit Ints (16 bytes).
 ints :: Weigh ()
 ints =
-  do allocs "ints count 1" 16 (return (count 1))
-     allocs "ints count 10" 16 (return (count 10))
-     allocs "ints count 1000000" 16 (return (count 1000000))
+  do validateFunc "ints count 1" count 1 (maxAllocs 24)
+     validateFunc "ints count 10" count 10 (maxAllocs 24)
+     validateFunc "ints count 1000000" count 1000000 (maxAllocs 24)
   where count :: Int -> ()
         count 0 = ()
         count a = count (a - 1)
@@ -40,13 +42,15 @@ Output results:
 
 ```
 Case                Bytes  GCs  Check
-integers count 0       16    0  OK
-integers count 1       48    0  OK
-integers count 10     336    0  OK
-integers count 100  3,216    0  OK
-ints count 1           16    0  OK
-ints count 10          16    0  OK
-ints count 1000000     16    0  OK
+integers count 0        0    0  OK
+integers count 1       32    0  OK
+integers count 2       64    0  OK
+integers count 3       96    0  OK
+integers count 10     320    0  OK
+integers count 100  3,200    0  OK
+ints count 1            0    0  OK
+ints count 10           0    0  OK
+ints count 1000000      0    0  OK
 ```
 
 You can try this out with `stack test` in the `weight` directory.
@@ -63,31 +67,31 @@ generates 3GB, 6GB and 6.5GB for 10 million integers in `[Int]`,
 
 ```
 Case                                                      Bytes     GCs  Check
-   1,000,000 [Int]                Allocate           47,999,976      92  OK
-   1,000,000 [Int]                Encode: Store      56,000,144      92  OK
-   1,000,000 [Int]                Encode: Cereal    368,230,040     679  OK
-   2,000,000 [Int]                Allocate           95,999,976     184  OK
-   2,000,000 [Int]                Encode: Store     112,000,144     184  OK
-   2,000,000 [Int]                Encode: Cereal    736,425,240   1,357  OK
-  10,000,000 [Int]                Allocate          479,999,976     920  OK
-  10,000,000 [Int]                Encode: Store     560,000,144     920  OK
-  10,000,000 [Int]                Encode: Cereal  3,682,021,208   6,783  OK
-   1,000,000 Boxed Vector Int     Allocate            8,007,936       1  OK
-   1,000,000 Boxed Vector Int     Encode: Store      16,008,168       2  OK
-   1,000,000 Boxed Vector Int     Encode: Cereal    600,238,200   1,118  OK
-   2,000,000 Boxed Vector Int     Allocate           16,015,752       1  OK
-   2,000,000 Boxed Vector Int     Encode: Store      32,015,984       2  OK
-   2,000,000 Boxed Vector Int     Encode: Cereal  1,200,441,216   2,234  OK
-  10,000,000 Boxed Vector Int     Allocate           80,078,248       1  OK
-  10,000,000 Boxed Vector Int     Encode: Store     160,078,480       2  OK
-  10,000,000 Boxed Vector Int     Encode: Cereal  6,002,099,680  11,168  OK
-   1,000,000 Storable Vector Int  Allocate            8,000,120       1  OK
-   1,000,000 Storable Vector Int  Encode: Store      16,000,272       2  OK
-   1,000,000 Storable Vector Int  Encode: Cereal    656,230,352   1,222  OK
-   2,000,000 Storable Vector Int  Allocate           16,000,120       1  OK
-   2,000,000 Storable Vector Int  Encode: Store      32,000,272       2  OK
-   2,000,000 Storable Vector Int  Encode: Cereal  1,312,425,552   2,443  OK
-  10,000,000 Storable Vector Int  Allocate           80,000,120       1  OK
-  10,000,000 Storable Vector Int  Encode: Store     160,000,272       2  OK
-  10,000,000 Storable Vector Int  Encode: Cereal  6,562,021,520  12,215  OK
+   1,000,000 [Int]                Allocate           47,999,928      92  OK
+   1,000,000 [Int]                Encode: Store      56,000,096      92  OK
+   1,000,000 [Int]                Encode: Cereal    368,229,992     679  OK
+   2,000,000 [Int]                Allocate           95,999,928     184  OK
+   2,000,000 [Int]                Encode: Store     112,000,096     184  OK
+   2,000,000 [Int]                Encode: Cereal    736,425,192   1,357  OK
+  10,000,000 [Int]                Allocate          479,999,928     920  OK
+  10,000,000 [Int]                Encode: Store     560,000,096     920  OK
+  10,000,000 [Int]                Encode: Cereal  3,682,021,160   6,783  OK
+   1,000,000 Boxed Vector Int     Allocate            8,007,888       1  OK
+   1,000,000 Boxed Vector Int     Encode: Store      16,008,120       2  OK
+   1,000,000 Boxed Vector Int     Encode: Cereal    600,238,152   1,118  OK
+   2,000,000 Boxed Vector Int     Allocate           16,015,704       1  OK
+   2,000,000 Boxed Vector Int     Encode: Store      32,015,936       2  OK
+   2,000,000 Boxed Vector Int     Encode: Cereal  1,200,441,168   2,234  OK
+  10,000,000 Boxed Vector Int     Allocate           80,078,200       1  OK
+  10,000,000 Boxed Vector Int     Encode: Store     160,078,432       2  OK
+  10,000,000 Boxed Vector Int     Encode: Cereal  6,002,099,632  11,168  OK
+   1,000,000 Storable Vector Int  Allocate            8,000,072       1  OK
+   1,000,000 Storable Vector Int  Encode: Store      16,000,224       2  OK
+   1,000,000 Storable Vector Int  Encode: Cereal    656,230,304   1,222  OK
+   2,000,000 Storable Vector Int  Allocate           16,000,072       1  OK
+   2,000,000 Storable Vector Int  Encode: Store      32,000,224       2  OK
+   2,000,000 Storable Vector Int  Encode: Cereal  1,312,425,504   2,443  OK
+  10,000,000 Storable Vector Int  Allocate           80,000,072       1  OK
+  10,000,000 Storable Vector Int  Encode: Store     160,000,224       2  OK
+  10,000,000 Storable Vector Int  Encode: Cereal  6,562,021,472  12,215  OK
 ````

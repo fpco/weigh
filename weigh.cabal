@@ -32,3 +32,4 @@ test-suite weigh-test
   main-is: Main.hs
   build-depends: base
                , weigh
+               , deepseq

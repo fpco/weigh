@@ -12,11 +12,17 @@ module Weigh
    -- * Types
   ,Weigh
   ,Weight(..)
-  -- * Combinators
+  -- * Simple combinators
   ,action
-  ,check
-  ,allocs
-  ,confirm)
+  ,func
+  ,value
+  -- * Validating combinators
+  ,validateAction
+  ,validateFunc
+  -- * Validators
+  ,maxAllocs
+  -- * Handy utilities
+  ,commas)
   where
 
 import Control.Applicative
@@ -34,6 +40,7 @@ import System.Exit
 import System.Mem
 import System.Process
 import Text.Printf
+import Unsafe.Coerce
 
 --------------------------------------------------------------------------------
 -- Types
@@ -52,8 +59,9 @@ data Weight =
 
 -- | An action to run.
 data Action =
-  forall a. NFData a =>
-  Action {_actionRun :: IO a
+  forall a b. (NFData a) =>
+  Action {_actionRun :: !(b -> IO a)
+         ,_actionArg :: !b
          ,actionCheck :: Weight -> Maybe String}
 
 --------------------------------------------------------------------------------
@@ -91,34 +99,51 @@ mainWith m =
 --------------------------------------------------------------------------------
 -- User DSL
 
--- | Write an action out.
-action :: NFData a => String -> IO a -> Weigh ()
-action name m = Weigh (tell [(name,Action m (const Nothing))])
+-- | Weigh a function applied to an argument.
+--
+-- Implemented in terms of 'validateFunc'.
+func :: (NFData a) => String -> (b -> a) -> b -> Weigh ()
+func name !f !x = validateFunc name f x (const Nothing)
 
--- | Write an action out. See 'confirm' for a handy combinator.
-check :: NFData a => String -> (Weight -> Maybe String) -> IO a -> Weigh ()
-check name validate m = Weigh (tell [(name,Action m validate)])
+-- | Weigh a value.
+--
+-- Implemented in terms of 'action'.
+value :: NFData a => String -> a -> Weigh ()
+value name !v = action name (return v)
 
--- | Define an upperbound on the allocations.
-allocs :: NFData a => String -> Int64 -> IO a -> Weigh ()
-allocs name n m =
-  check name
-        (\w ->
-           if weightAllocatedBytes w <= n
-              then Nothing
-              else Just ("Allocated " ++
-                         commas (weightAllocatedBytes w) ++
-                         " bytes, exceeded upper bound of " ++
-                         commas n ++ " bytes."))
-        m
+-- | Weigh an IO action.
+--
+-- Implemented in terms of 'validateAction'.
+action :: NFData a
+       => String -> IO a -> Weigh ()
+action name !m =
+  validateAction name
+                 (const m)
+                 ()
+                 (const Nothing)
 
--- | Confirm that a predicate passes. If it fails, return the error
--- message. Handy for use with 'check'.
-confirm :: String -> (a -> Bool) -> a -> Maybe String
-confirm label predicate a =
-  if predicate a
-     then Nothing
-     else Just label
+-- | Make a validator that set sthe maximum allocations.
+maxAllocs :: Int64 -> (Weight -> Maybe String)
+maxAllocs n =
+  \w ->
+    if weightAllocatedBytes w > n
+       then Just ("Allocated bytes exceeds " ++
+                  commas n ++ ": " ++ commas (weightAllocatedBytes w))
+       else Nothing
+
+-- | Weigh an IO action, validating the result.
+validateAction
+  :: (NFData a)
+  => String -> (b -> IO a) -> b -> (Weight -> Maybe String) -> Weigh ()
+validateAction name !m !arg !validate =
+  Weigh (tell [(name,Action m arg validate)])
+
+-- | Weigh a function, validating the result
+validateFunc
+  :: (NFData a)
+  => String -> (b -> a) -> b -> (Weight -> Maybe String) -> Weigh ()
+validateFunc name !f !x !validate =
+  Weigh (tell [(name,Action (return . f) x validate)])
 
 --------------------------------------------------------------------------------
 -- Internal measuring actions
@@ -133,8 +158,8 @@ weigh args cases =
         Nothing -> error "No such case!"
         Just act ->
           do case act of
-               Action !run _ ->
-                 do (bytes,gcs) <- weighAction run
+               Action !run arg _ ->
+                 do (bytes,gcs) <- weighAction run arg
                     print (Weight {weightLabel = label
                                   ,weightAllocatedBytes = bytes
                                   ,weightGCs = gcs})
@@ -156,11 +181,11 @@ fork label =
          in return r
 
 -- | Weigh an action.
-weighAction :: NFData a => IO a -> IO (Int64, Int64)
-weighAction run =
+weighAction :: (NFData a) => (b -> IO a) -> b -> IO (Int64, Int64)
+weighAction !run !arg =
   do performGC
      !bootupStats <- getGCStats
-     !_ <- fmap force run
+     !_ <- fmap force (run arg)
      performGC
      !actionStats <- getGCStats
      reflectionBytes <- ghcStatsSize bootupStats
@@ -169,7 +194,8 @@ weighAction run =
            bytesAllocated actionStats - bytesAllocated bootupStats -
            reflectionBytes
          actionGCs = numGcs actionStats - reflectionGCs
-     return (actionBytes,actionGCs)
+         overheadBytes = 24
+     return (max 0 (actionBytes - overheadBytes),actionGCs)
 
 --------------------------------------------------------------------------------
 -- Formatting functions
