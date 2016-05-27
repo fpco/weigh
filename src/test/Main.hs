@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
 
 -- | Example uses of Weigh which should work.
@@ -13,7 +14,8 @@ main :: IO ()
 main =
   mainWith (do integers
                ints
-               struct)
+               struct
+               packing)
 
 -- | Just counting integers.
 integers :: Weigh ()
@@ -46,5 +48,32 @@ instance NFData IntegerStruct
 
 -- | Weigh allocating a user-defined structure.
 struct :: Weigh ()
-struct = do func "alloc struct" (\x -> IntegerStruct x x) 5
-            func "alloc struct2" (\x -> (IntegerStruct x x,IntegerStruct x x)) 5
+struct =
+  do func "\\_ -> IntegerStruct 0 0" (\_ -> IntegerStruct 0 0) (5 :: Integer)
+     func "\\x -> IntegerStruct x 0" (\x -> IntegerStruct x 0) 5
+     func "\\x -> IntegerStruct x x" (\x -> IntegerStruct x x) 5
+     func "\\x -> IntegerStruct (x+1) x" (\x -> IntegerStruct (x+1) x) 5
+     func "\\x -> IntegerStruct (x+1) (x+1)" (\x -> IntegerStruct (x+1) (x+1)) 5
+     func "\\x -> IntegerStruct (x+1) (x+2)" (\x -> IntegerStruct (x+1) (x+2)) 5
+
+-- | A simple structure with an Int in it.
+data HasInt = HasInt !Int
+  deriving (Generic)
+instance NFData HasInt
+
+-- | A simple structure with an Int in it.
+data HasPacked = HasPacked HasInt
+  deriving (Generic)
+instance NFData HasPacked
+
+-- | A simple structure with an Int in it.
+data HasUnpacked = HasUnpacked {-# UNPACK #-} !HasInt
+  deriving (Generic)
+instance NFData HasUnpacked
+
+-- | Weigh: packing vs no packing.
+packing :: Weigh ()
+packing =
+  do func "\\x -> HasInt x" (\x -> HasInt x) 5
+     func "\\x -> HasUnpacked (HasInt x)" (\x -> HasUnpacked (HasInt x)) 5
+     func "\\x -> HasPacked (HasInt x)" (\x -> HasPacked (HasInt x)) 5
