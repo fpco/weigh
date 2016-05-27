@@ -55,6 +55,10 @@ ints count 1000000      0    0  OK
 
 You can try this out with `stack test` in the `weight` directory.
 
+To try out other examples, try:
+
+* `stack test :weigh-maps --flag weigh:weigh-maps`
+
 ## Real-world use-case
 
 This is the output for the Store package to measure allocation of
