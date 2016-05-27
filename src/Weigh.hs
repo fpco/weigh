@@ -197,13 +197,13 @@ weighAction !run !arg =
      performGC
      -- The above forces getGCStats data to be generated NOW.
      !actionStats <- getGCStats
-     let reflectionGCs = 2 -- We performed this many GCs up to this point.
+     let reflectionGCs = 1 -- We performed an additional GC.
          actionBytes =
            (bytesAllocated actionStats - bytesAllocated bootupStats) -
            -- We subtract the size of "bootupStats", which will be
            -- included after we did the performGC.
            ghcStatsSizeInBytes
-         actionGCs = numGcs actionStats - reflectionGCs
+         actionGCs = numGcs actionStats - numGcs bootupStats - reflectionGCs
          -- I believe that 24 is the cost to allocate and force the
          -- thunk. This may change with GHC version in the future.
          overheadBytes = 24
