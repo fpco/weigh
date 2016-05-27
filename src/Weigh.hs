@@ -31,7 +31,6 @@ import Control.Monad.Writer
 import Data.List
 import Data.List.Split
 import Data.Maybe
-import GHC.HeapView (getClosureRaw)
 import GHC.Int
 import GHC.Stats
 import Prelude
@@ -40,7 +39,7 @@ import System.Exit
 import System.Mem
 import System.Process
 import Text.Printf
-import Unsafe.Coerce
+import Weigh.GHCStats
 
 --------------------------------------------------------------------------------
 -- Types
@@ -167,7 +166,8 @@ weigh args cases =
     _ -> fmap Just (mapM (fork . fst) cases)
 
 -- | Fork a case and run it.
-fork :: String -> IO Weight
+fork :: String -- ^ Label for the case.
+     -> IO Weight
 fork label =
   do me <- getExecutablePath
      (exit,out,err) <-
@@ -180,22 +180,38 @@ fork label =
          let !r = read out
          in return r
 
--- | Weigh an action.
-weighAction :: (NFData a) => (b -> IO a) -> b -> IO (Int64, Int64)
+-- | Weigh an action. This function is heavily documented inside.
+weighAction
+  :: (NFData a)
+  => (b -> IO a)      -- ^ A function whose memory use we want to measure.
+  -> b                -- ^ Argument to the function. Doesn't have to be forced.
+  -> IO (Int64,Int64) -- ^ Bytes allocated and garbage collections.
 weighAction !run !arg =
   do performGC
+     -- The above forces getGCStats data to be generated NOW.
      !bootupStats <- getGCStats
+     -- We need the above to subtract "program startup" overhead. This
+     -- operation itself adds n bytes for the size of GCStats, but we
+     -- subtract again that later.
      !_ <- fmap force (run arg)
      performGC
+     -- The above forces getGCStats data to be generated NOW.
      !actionStats <- getGCStats
-     reflectionBytes <- ghcStatsSize bootupStats
-     let reflectionGCs = 2
+     let reflectionGCs = 2 -- We performed this many GCs up to this point.
          actionBytes =
-           bytesAllocated actionStats - bytesAllocated bootupStats -
-           reflectionBytes
+           (bytesAllocated actionStats - bytesAllocated bootupStats) -
+           -- We subtract the size of "bootupStats", which will be
+           -- included after we did the performGC.
+           ghcStatsSizeInBytes
          actionGCs = numGcs actionStats - reflectionGCs
+         -- I believe that 24 is the cost to allocate and force the
+         -- thunk. This may change with GHC version in the future.
          overheadBytes = 24
-     return (max 0 (actionBytes - overheadBytes),actionGCs)
+         -- If overheadBytes is too large, we conservatively just
+         -- return zero. It's not perfect, but this library is for
+         -- measuring large quantities anyway.
+         actualBytes = max 0 (actionBytes - overheadBytes)
+     return (actualBytes,actionGCs)
 
 --------------------------------------------------------------------------------
 -- Formatting functions
@@ -228,17 +244,3 @@ tablize xs =
 -- | Formatting an integral number to 1,000,000, etc.
 commas :: (Num a,Integral a,Show a) => a -> String
 commas = reverse . intercalate "," . chunksOf 3 . reverse . show
-
---------------------------------------------------------------------------------
--- Memory utilities
-
--- This used to be available via GHC.Constants
-#include "MachDeps.h"
-wORD_SIZE :: Int
-wORD_SIZE = SIZEOF_HSWORD
-
--- | Calculate size of GHC objects in Bytes.
-ghcStatsSize :: GCStats -> IO Int64
-ghcStatsSize !x =
-  do (_,y,_) <- getClosureRaw x
-     return . fromIntegral $ length y * wORD_SIZE

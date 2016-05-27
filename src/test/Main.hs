@@ -32,9 +32,9 @@ integers =
 -- to only two 64-bit Ints (16 bytes).
 ints :: Weigh ()
 ints =
-  do validateFunc "ints count 1" count 1 (maxAllocs 24)
-     validateFunc "ints count 10" count 10 (maxAllocs 24)
-     validateFunc "ints count 1000000" count 1000000 (maxAllocs 24)
+  do validateFunc "ints count 1" count 1 (maxAllocs 0)
+     validateFunc "ints count 10" count 10 (maxAllocs 0)
+     validateFunc "ints count 1000000" count 1000000 (maxAllocs 0)
   where count :: Int -> ()
         count 0 = ()
         count a = count (a - 1)
