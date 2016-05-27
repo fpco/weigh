@@ -163,7 +163,10 @@ weigh args cases =
                                   ,weightAllocatedBytes = bytes
                                   ,weightGCs = gcs})
              return Nothing
-    _ -> fmap Just (mapM (fork . fst) cases)
+    _
+      | names == nub names -> fmap Just (mapM (fork . fst) cases)
+      | otherwise -> error "Non-unique names specified for things to measure."
+      where names = map fst cases
 
 -- | Fork a case and run it.
 fork :: String -- ^ Label for the case.
