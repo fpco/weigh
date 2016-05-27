@@ -1,5 +1,6 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 
 -- | Calculate the size of GHC.Stats statically.
 
@@ -17,7 +18,11 @@ ghcStatsSizeInBytes :: Int64
 ghcStatsSizeInBytes =
   $(do info <- reify ''GHC.Stats.GCStats
        case info of
+#if __GLASGOW_HASKELL__ >= 800
+         TyConI (DataD _ _ _ _ [RecC _ fields] _) ->
+#else
          TyConI (DataD _ _ _ [RecC _ fields] _) ->
+#endif
            do total <-
                 fmap (foldl' (+) headerSize)
                      (mapM fieldSize fields)
@@ -43,6 +48,6 @@ ghcStatsSizeInBytes =
                    map (,8)
                        [''Int64,''Int32,''Int8,''Int16,''Double]
          _ ->
-           fail "Unexpected shape of GCStats data type. \
-                \Please report this as a bug, this function \
-                \needs to be updated to the newer GCStats type.")
+           fail ("Unexpected shape of GCStats data type. " ++
+                 "Please report this as a bug, this function " ++
+                 "needs to be updated to the newer GCStats type."))
