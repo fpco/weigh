@@ -1,6 +1,6 @@
 name:                weigh
 version:             0.0.0
-synopsis:            Measures the memory usage of a Haskell value or function
+synopsis:            Measure allocations of a Haskell functions/values
 description:         Please see README.md
 homepage:            https://github.com/fpco/weigh#readme
 license:             BSD3
