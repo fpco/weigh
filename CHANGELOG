@@ -1,3 +1,7 @@
+0.0.2:
+	* Remove magic numbers from weighing code, better accuracy
+	* Add additional `io` combinator
+
 0.0.1:
 	* Support GHC 8.
 
