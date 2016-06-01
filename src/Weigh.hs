@@ -13,9 +13,10 @@ module Weigh
   ,Weigh
   ,Weight(..)
   -- * Simple combinators
-  ,action
   ,func
+  ,io
   ,value
+  ,action
   -- * Validating combinators
   ,validateAction
   ,validateFunc
@@ -59,7 +60,7 @@ data Weight =
 -- | An action to run.
 data Action =
   forall a b. (NFData a) =>
-  Action {_actionRun :: !(b -> IO a)
+  Action {_actionRun :: !(Either (b -> IO a) (b -> a))
          ,_actionArg :: !b
          ,actionCheck :: Weight -> Maybe String}
 
@@ -95,6 +96,7 @@ mainWith m =
                          errors
                    exitWith (ExitFailure (-1))
 
+
 --------------------------------------------------------------------------------
 -- User DSL
 
@@ -104,22 +106,24 @@ mainWith m =
 func :: (NFData a) => String -> (b -> a) -> b -> Weigh ()
 func name !f !x = validateFunc name f x (const Nothing)
 
+-- | Weigh a function applied to an argument.
+--
+-- Implemented in terms of 'validateFunc'.
+io :: (NFData a) => String -> (b -> IO a) -> b -> Weigh ()
+io name !f !x = validateAction name f x (const Nothing)
+
 -- | Weigh a value.
 --
 -- Implemented in terms of 'action'.
 value :: NFData a => String -> a -> Weigh ()
-value name !v = action name (return v)
+value name !v = func name id v
 
 -- | Weigh an IO action.
 --
 -- Implemented in terms of 'validateAction'.
 action :: NFData a
        => String -> IO a -> Weigh ()
-action name !m =
-  validateAction name
-                 (const m)
-                 ()
-                 (const Nothing)
+action name !m = io name (const m) ()
 
 -- | Make a validator that set sthe maximum allocations.
 maxAllocs :: Int64 -> (Weight -> Maybe String)
@@ -135,14 +139,14 @@ validateAction
   :: (NFData a)
   => String -> (b -> IO a) -> b -> (Weight -> Maybe String) -> Weigh ()
 validateAction name !m !arg !validate =
-  Weigh (tell [(name,Action m arg validate)])
+  Weigh (tell [(name,Action (Left m) arg validate)])
 
 -- | Weigh a function, validating the result
 validateFunc
   :: (NFData a)
   => String -> (b -> a) -> b -> (Weight -> Maybe String) -> Weigh ()
 validateFunc name !f !x !validate =
-  Weigh (tell [(name,Action (return . f) x validate)])
+  Weigh (tell [(name,Action (Right f) x validate)])
 
 --------------------------------------------------------------------------------
 -- Internal measuring actions
@@ -158,7 +162,10 @@ weigh args cases =
         Just act ->
           do case act of
                Action !run arg _ ->
-                 do (bytes,gcs) <- weighAction run arg
+                 do (bytes,gcs) <-
+                      case run of
+                        Right f -> weighFunc f arg
+                        Left m -> weighAction m arg
                     print (Weight {weightLabel = label
                                   ,weightAllocatedBytes = bytes
                                   ,weightGCs = gcs})
@@ -183,13 +190,43 @@ fork label =
          let !r = read out
          in return r
 
--- | Weigh an action. This function is heavily documented inside.
+-- | Weigh a pure function. This function is heavily documented inside.
+weighFunc
+  :: (NFData a)
+  => (b -> a)         -- ^ A function whose memory use we want to measure.
+  -> b                -- ^ Argument to the function. Doesn't have to be forced.
+  -> IO (Int64,Int64) -- ^ Bytes allocated and garbage collections.
+weighFunc run !arg =
+  do performGC
+     -- The above forces getGCStats data to be generated NOW.
+     !bootupStats <- getGCStats
+     -- We need the above to subtract "program startup" overhead. This
+     -- operation itself adds n bytes for the size of GCStats, but we
+     -- subtract again that later.
+     let !_ = force (run arg)
+     performGC
+     -- The above forces getGCStats data to be generated NOW.
+     !actionStats <- getGCStats
+     let reflectionGCs = 1 -- We performed an additional GC.
+         actionBytes =
+           (bytesAllocated actionStats - bytesAllocated bootupStats) -
+           -- We subtract the size of "bootupStats", which will be
+           -- included after we did the performGC.
+           ghcStatsSizeInBytes
+         actionGCs = numGcs actionStats - numGcs bootupStats - reflectionGCs
+         -- If overheadBytes is too large, we conservatively just
+         -- return zero. It's not perfect, but this library is for
+         -- measuring large quantities anyway.
+         actualBytes = max 0 actionBytes
+     return (actualBytes,actionGCs)
+
+-- | Weigh a pure function. This function is heavily documented inside.
 weighAction
   :: (NFData a)
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
   -> IO (Int64,Int64) -- ^ Bytes allocated and garbage collections.
-weighAction !run !arg =
+weighAction run !arg =
   do performGC
      -- The above forces getGCStats data to be generated NOW.
      !bootupStats <- getGCStats
@@ -207,13 +244,10 @@ weighAction !run !arg =
            -- included after we did the performGC.
            ghcStatsSizeInBytes
          actionGCs = numGcs actionStats - numGcs bootupStats - reflectionGCs
-         -- I believe that 24 is the cost to allocate and force the
-         -- thunk. This may change with GHC version in the future.
-         overheadBytes = 24
          -- If overheadBytes is too large, we conservatively just
          -- return zero. It's not perfect, but this library is for
          -- measuring large quantities anyway.
-         actualBytes = max 0 (actionBytes - overheadBytes)
+         actualBytes = max 0 actionBytes
      return (actualBytes,actionGCs)
 
 --------------------------------------------------------------------------------
