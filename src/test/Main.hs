@@ -13,9 +13,21 @@ import GHC.Generics
 main :: IO ()
 main =
   mainWith (do integers
+               ioactions
                ints
                struct
                packing)
+
+-- | Weigh IO actions.
+ioactions :: Weigh ()
+ioactions =
+  do action "integers count IO CAF 0" (return (count 0))
+     io "integers count IO func 0" (return . count) 0
+     action "integers count IO CAF 1" (return (count 1))
+     io "integers count IO func 1" (return . count) 1
+  where count :: Integer -> ()
+        count 0 = ()
+        count a = count (a - 1)
 
 -- | Just counting integers.
 integers :: Weigh ()
