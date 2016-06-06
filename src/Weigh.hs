@@ -233,10 +233,16 @@ fork label =
                                ["--case",label,"+RTS","-T","-RTS"]
                                ""
      case exit of
-       ExitFailure{} -> error ("Error in case (" ++ show label ++ "):\n  " ++ err)
+       ExitFailure{} ->
+         error ("Error in case (" ++ show label ++ "):\n  " ++ err)
        ExitSuccess ->
-         let !r = read out
-         in return r
+         case reads out of
+           [(!r,_)] -> return r
+           _ ->
+             error (concat ["Malformed output from subprocess. Weigh"
+                           ," (currently) communicates with its sub-"
+                           ,"processes via stdout. Remove any other "
+                           ,"output from your process."])
 
 -- | Weigh a pure function. This function is heavily documented inside.
 weighFunc
