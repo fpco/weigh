@@ -106,9 +106,9 @@ mainWith m =
 func :: (NFData a) => String -> (b -> a) -> b -> Weigh ()
 func name !f !x = validateFunc name f x (const Nothing)
 
--- | Weigh a function applied to an argument.
+-- | Weigh an action applied to an argument.
 --
--- Implemented in terms of 'validateFunc'.
+-- Implemented in terms of 'validateAction'.
 io :: (NFData a) => String -> (b -> IO a) -> b -> Weigh ()
 io name !f !x = validateAction name f x (const Nothing)
 
