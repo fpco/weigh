@@ -72,7 +72,7 @@ mainWith :: Weigh a -> IO ()
 mainWith m =
   do args <- getArgs
      let cases = execWriter (runWeigh m)
-     result <- weigh args cases
+     result <- weighDispatch args cases
      case result of
        Nothing -> return ()
        Just weights ->
@@ -153,8 +153,8 @@ validateFunc name !f !x !validate =
 
 -- | Weigh a set of actions. The value of the actions are forced
 -- completely to ensure they are fully allocated.
-weigh :: [String] -> [(String,Action)] -> IO (Maybe [Weight])
-weigh args cases =
+weighDispatch :: [String] -> [(String,Action)] -> IO (Maybe [Weight])
+weighDispatch args cases =
   case args of
     ("--case":label:_) ->
       case lookup label (deepseq (map fst cases) cases) of
