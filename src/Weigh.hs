@@ -5,14 +5,27 @@
 {-# LANGUAGE BangPatterns #-}
 
 -- | Framework for seeing how much a function allocates.
+--
+-- Example:
+--
+-- @
+-- import Weigh
+-- main =
+--   mainWith (do func "integers count 0" count 0
+--                func "integers count 1" count 1
+--                func "integers count 2" count 2
+--                func "integers count 3" count 3
+--                func "integers count 10" count 10
+--                func "integers count 100" count 100)
+--   where count :: Integer -> ()
+--         count 0 = ()
+--         count a = count (a - 1)
+-- @
 
 module Weigh
-  (-- * Main entry point.
+  (-- * Main entry points
    mainWith
   ,weighResults
-   -- * Types
-  ,Weigh
-  ,Weight(..)
   -- * Simple combinators
   ,func
   ,io
@@ -23,6 +36,9 @@ module Weigh
   ,validateFunc
   -- * Validators
   ,maxAllocs
+  -- * Types
+  ,Weigh
+  ,Weight(..)
   -- * Handy utilities
   ,commas
   -- * Internals
@@ -73,7 +89,7 @@ data Action =
 --------------------------------------------------------------------------------
 -- Main-runners
 
--- | Just run the measuring and print a report. Uses
+-- | Just run the measuring and print a report. Uses 'weighResults'.
 mainWith :: Weigh a -> IO ()
 mainWith m =
   do results <- weighResults m
@@ -113,30 +129,44 @@ weighResults m =
 -- | Weigh a function applied to an argument.
 --
 -- Implemented in terms of 'validateFunc'.
-func :: (NFData a) => String -> (b -> a) -> b -> Weigh ()
+func :: (NFData a)
+     => String   -- ^ Name of the case.
+     -> (b -> a) -- ^ Function that does some action to measure.
+     -> b        -- ^ Argument to that function.
+     -> Weigh ()
 func name !f !x = validateFunc name f x (const Nothing)
 
 -- | Weigh an action applied to an argument.
 --
 -- Implemented in terms of 'validateAction'.
-io :: (NFData a) => String -> (b -> IO a) -> b -> Weigh ()
+io :: (NFData a)
+   => String      -- ^ Name of the case.
+   -> (b -> IO a) -- ^ Aciton that does some IO to measure.
+   -> b           -- ^ Argument to that function.
+   -> Weigh ()
 io name !f !x = validateAction name f x (const Nothing)
 
 -- | Weigh a value.
 --
 -- Implemented in terms of 'action'.
-value :: NFData a => String -> a -> Weigh ()
+value :: NFData a
+      => String -- ^ Name for the value.
+      -> a      -- ^ The value to measure.
+      -> Weigh ()
 value name !v = func name id v
 
 -- | Weigh an IO action.
 --
 -- Implemented in terms of 'validateAction'.
 action :: NFData a
-       => String -> IO a -> Weigh ()
+       => String -- ^ Name for the value.
+       -> IO a   -- ^ The action to measure.
+       -> Weigh ()
 action name !m = io name (const m) ()
 
 -- | Make a validator that set sthe maximum allocations.
-maxAllocs :: Int64 -> (Weight -> Maybe String)
+maxAllocs :: Int64 -- ^ The upper bound.
+          -> (Weight -> Maybe String)
 maxAllocs n =
   \w ->
     if weightAllocatedBytes w > n
@@ -145,16 +175,22 @@ maxAllocs n =
        else Nothing
 
 -- | Weigh an IO action, validating the result.
-validateAction
-  :: (NFData a)
-  => String -> (b -> IO a) -> b -> (Weight -> Maybe String) -> Weigh ()
+validateAction :: (NFData a)
+               => String -- ^ Name of the action.
+               -> (b -> IO a) -- ^ The function which performs some IO.
+               -> b -- ^ Argument to the function. Doesn't have to be forced.
+               -> (Weight -> Maybe String) -- ^ A validating function, returns maybe an error.
+               -> Weigh ()
 validateAction name !m !arg !validate =
   Weigh (tell [(name,Action (Left m) arg validate)])
 
 -- | Weigh a function, validating the result
-validateFunc
-  :: (NFData a)
-  => String -> (b -> a) -> b -> (Weight -> Maybe String) -> Weigh ()
+validateFunc :: (NFData a)
+             => String -- ^ Name of the function.
+             -> (b -> a) -- ^ The function which calculates something.
+             -> b -- ^ Argument to the function. Doesn't have to be forced.
+             -> (Weight -> Maybe String) -- ^ A validating function, returns maybe an error.
+             -> Weigh ()
 validateFunc name !f !x !validate =
   Weigh (tell [(name,Action (Right f) x validate)])
 
@@ -163,7 +199,9 @@ validateFunc name !f !x !validate =
 
 -- | Weigh a set of actions. The value of the actions are forced
 -- completely to ensure they are fully allocated.
-weighDispatch :: [String] -> [(String,Action)] -> IO (Maybe [Weight])
+weighDispatch :: [String] -- ^ Program arguments.
+              -> [(String,Action)] -- ^ Weigh name:action mapping.
+              -> IO (Maybe [Weight])
 weighDispatch args cases =
   case args of
     ("--case":label:_) ->
