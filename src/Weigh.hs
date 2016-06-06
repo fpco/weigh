@@ -9,6 +9,7 @@
 module Weigh
   (-- * Main entry point.
    mainWith
+  ,weighResults
    -- * Types
   ,Weigh
   ,Weight(..)
@@ -23,7 +24,12 @@ module Weigh
   -- * Validators
   ,maxAllocs
   -- * Handy utilities
-  ,commas)
+  ,commas
+  -- * Internals
+  ,weighDispatch
+  ,weighFunc
+  ,weighAction
+  )
   where
 
 import Control.Applicative
@@ -67,35 +73,39 @@ data Action =
 --------------------------------------------------------------------------------
 -- Main-runners
 
--- | Just run the measuring and print a report.
+-- | Just run the measuring and print a report. Uses
 mainWith :: Weigh a -> IO ()
 mainWith m =
+  do results <- weighResults m
+     unless (null results)
+            (do putStrLn ""
+                putStrLn (report results))
+     case mapMaybe (\(w,r) ->
+                      do msg <- r
+                         return (w,msg))
+                   results of
+       [] -> return ()
+       errors ->
+         do putStrLn "\nCheck problems:"
+            mapM_ (\(w,r) -> putStrLn ("  " ++ weightLabel w ++ "\n    " ++ r)) errors
+            exitWith (ExitFailure (-1))
+
+-- | Run the measuring and return all the results, each one may have
+-- an error.
+weighResults
+  :: Weigh a -> IO [(Weight,Maybe String)]
+weighResults m =
   do args <- getArgs
      let cases = execWriter (runWeigh m)
      result <- weighDispatch args cases
      case result of
-       Nothing -> return ()
+       Nothing -> return []
        Just weights ->
-         do let results =
-                  map (\w ->
-                         case lookup (weightLabel w) cases of
-                           Nothing -> (w,Nothing)
-                           Just a -> (w,actionCheck a w))
-                      weights
-            putStrLn ""
-            putStrLn (report results)
-            case mapMaybe (\(w,r) ->
-                             do msg <- r
-                                return (w,msg))
-                          results of
-              [] -> return ()
-              errors ->
-                do putStrLn "\nCheck problems:"
-                   mapM_ (\(w,r) ->
-                            putStrLn ("  " ++ weightLabel w ++ "\n    " ++ r))
-                         errors
-                   exitWith (ExitFailure (-1))
-
+         return (map (\w ->
+                        case lookup (weightLabel w) cases of
+                          Nothing -> (w,Nothing)
+                          Just a -> (w,actionCheck a w))
+                     weights)
 
 --------------------------------------------------------------------------------
 -- User DSL
