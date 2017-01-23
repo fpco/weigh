@@ -8,6 +8,8 @@ module Weigh.GHCStats
   (ghcStatsSizeInBytes)
   where
 
+#include "MachDeps.h"
+
 import GHC.Stats
 import GHC.Int
 import Language.Haskell.TH
@@ -27,7 +29,7 @@ ghcStatsSizeInBytes =
                 fmap (foldl' (+) headerSize)
                      (mapM fieldSize fields)
               litE (IntegerL (fromIntegral total))
-           where headerSize = 8
+           where headerSize = SIZEOF_HSWORD
                  fieldSize
                    :: (name,strict,Type) -> Q Int64
                  fieldSize (_,_,typ) =
@@ -45,7 +47,7 @@ ghcStatsSizeInBytes =
                              ". Please report this as a bug, the codebase needs updating.")
                  knownTypes :: [(Name,Int64)]
                  knownTypes =
-                   map (,8)
+                   map (,SIZEOF_HSWORD)
                        [''Int64,''Int32,''Int8,''Int16,''Double]
          _ ->
            fail ("Unexpected shape of GCStats data type. " ++
