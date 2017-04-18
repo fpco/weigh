@@ -76,7 +76,9 @@ newtype Weigh a =
 data Weight =
   Weight {weightLabel :: !String
          ,weightAllocatedBytes :: !Int64
-         ,weightGCs :: !Int64}
+         ,weightGCs :: !Int64
+         ,weightLiveBytes :: !Int64
+         }
   deriving (Read,Show)
 
 -- | An action to run.
@@ -210,13 +212,14 @@ weighDispatch args cases =
         Just act ->
           do case act of
                Action !run arg _ ->
-                 do (bytes,gcs) <-
+                 do (bytes,gcs,liveBytes) <-
                       case run of
                         Right f -> weighFunc f arg
                         Left m -> weighAction m arg
                     print (Weight {weightLabel = label
                                   ,weightAllocatedBytes = bytes
-                                  ,weightGCs = gcs})
+                                  ,weightGCs = gcs
+                                  ,weightLiveBytes = liveBytes})
              return Nothing
     _
       | names == nub names -> fmap Just (mapM (fork . fst) cases)
@@ -249,7 +252,7 @@ weighFunc
   :: (NFData a)
   => (b -> a)         -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (Int64,Int64) -- ^ Bytes allocated and garbage collections.
+  -> IO (Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
 weighFunc run !arg =
   do performGC
      -- The above forces getGCStats data to be generated NOW.
@@ -272,14 +275,16 @@ weighFunc run !arg =
          -- return zero. It's not perfect, but this library is for
          -- measuring large quantities anyway.
          actualBytes = max 0 actionBytes
-     return (actualBytes,actionGCs)
+         liveBytes = max 0 (currentBytesUsed actionStats -
+                            currentBytesUsed bootupStats)
+     return (actualBytes,actionGCs,liveBytes)
 
 -- | Weigh a pure function. This function is heavily documented inside.
 weighAction
   :: (NFData a)
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (Int64,Int64) -- ^ Bytes allocated and garbage collections.
+  -> IO (Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
 weighAction run !arg =
   do performGC
      -- The above forces getGCStats data to be generated NOW.
@@ -302,7 +307,9 @@ weighAction run !arg =
          -- return zero. It's not perfect, but this library is for
          -- measuring large quantities anyway.
          actualBytes = max 0 actionBytes
-     return (actualBytes,actionGCs)
+         liveBytes = max 0 (currentBytesUsed actionStats -
+                            currentBytesUsed bootupStats)
+     return (actualBytes,actionGCs,liveBytes)
 
 --------------------------------------------------------------------------------
 -- Formatting functions
@@ -311,11 +318,12 @@ weighAction run !arg =
 report :: [(Weight,Maybe String)] -> String
 report =
   tablize .
-  ([(True,"Case"),(False,"Bytes"),(False,"GCs"),(True,"Check")] :) . map toRow
+  ([(True,"Case"),(False,"Allocated"),(False,"GCs"),(False,"Live"),(True,"Check")] :) . map toRow
   where toRow (w,err) =
           [(True,weightLabel w)
           ,(False,commas (weightAllocatedBytes w))
           ,(False,commas (weightGCs w))
+          ,(False, commas (weightLiveBytes w))
           ,(True
            ,case err of
               Nothing -> "OK"
