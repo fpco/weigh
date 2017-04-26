@@ -63,6 +63,8 @@ import GHC.Stats
 import Prelude
 import System.Environment
 import System.Exit
+import System.IO
+import System.IO.Temp
 import System.Mem
 import System.Process
 import Text.Printf
@@ -239,21 +241,27 @@ weighDispatch :: [String] -- ^ Program arguments.
               -> IO (Maybe [Weight])
 weighDispatch args cases =
   case args of
-    ("--case":label:_) ->
-      case lookup label (deepseq (map fst cases) cases) of
-        Nothing -> error "No such case!"
-        Just act ->
-          do case act of
-               Action !run arg _ ->
-                 do (bytes,gcs,liveBytes,maxByte) <-
-                      case run of
-                        Right f -> weighFunc f arg
-                        Left m -> weighAction m arg
-                    print (Weight {weightLabel = label
-                                  ,weightAllocatedBytes = bytes
-                                  ,weightGCs = gcs
-                                  ,weightLiveBytes = liveBytes
-                                  ,weightMaxBytes = maxByte})
+    ("--case":label:fp:_) ->
+      let !_ = force fp
+      in case lookup label (deepseq (map fst cases) cases) of
+           Nothing -> error "No such case!"
+           Just act -> do
+             case act of
+               Action !run arg _ -> do
+                 (bytes, gcs, liveBytes, maxByte) <-
+                   case run of
+                     Right f -> weighFunc f arg
+                     Left m -> weighAction m arg
+                 writeFile
+                   fp
+                   (show
+                      (Weight
+                       { weightLabel = label
+                       , weightAllocatedBytes = bytes
+                       , weightGCs = gcs
+                       , weightLiveBytes = liveBytes
+                       , weightMaxBytes = maxByte
+                       }))
              return Nothing
     _
       | names == nub names -> fmap Just (mapM (fork . fst) cases)
@@ -264,22 +272,30 @@ weighDispatch args cases =
 fork :: String -- ^ Label for the case.
      -> IO Weight
 fork label =
-  do me <- getExecutablePath
-     (exit,out,err) <-
-       readProcessWithExitCode me
-                               ["--case",label,"+RTS","-T","-RTS"]
-                               ""
-     case exit of
-       ExitFailure{} ->
-         error ("Error in case (" ++ show label ++ "):\n  " ++ err)
-       ExitSuccess ->
-         case reads out of
-           [(!r,_)] -> return r
-           _ ->
-             error (concat ["Malformed output from subprocess. Weigh"
-                           ," (currently) communicates with its sub-"
-                           ,"processes via stdout. Remove any other "
-                           ,"output from your process."])
+  withSystemTempFile
+    "weigh"
+    (\fp h -> do
+       hClose h
+       me <- getExecutablePath
+       (exit, _, err) <-
+         readProcessWithExitCode
+           me
+           ["--case", label, fp, "+RTS", "-T", "-RTS"]
+           ""
+       case exit of
+         ExitFailure {} ->
+           error ("Error in case (" ++ show label ++ "):\n  " ++ err)
+         ExitSuccess ->
+           do out <- readFile fp
+              case reads out of
+                [(!r, _)] -> return r
+                _ ->
+                  error
+                    (concat
+                       [ "Malformed output from subprocess. Weigh"
+                       , " (currently) communicates with its sub-"
+                       , "processes via a temporary file."
+                       ]))
 
 -- | Weigh a pure function. This function is heavily documented inside.
 weighFunc
