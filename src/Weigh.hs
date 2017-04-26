@@ -26,6 +26,9 @@ module Weigh
   (-- * Main entry points
    mainWith
   ,weighResults
+  -- * Configuration
+  ,setColumns
+  ,Column(..)
   -- * Simple combinators
   ,func
   ,io
@@ -49,8 +52,9 @@ module Weigh
   where
 
 import Control.Applicative
+import Control.Arrow
 import Control.DeepSeq
-import Control.Monad.Writer
+import Control.Monad.State
 import Data.List
 import Data.List.Split
 import Data.Maybe
@@ -67,9 +71,17 @@ import Weigh.GHCStats
 --------------------------------------------------------------------------------
 -- Types
 
+-- | Table column.
+data Column = Case | Allocated | GCs| Live | Check | Max
+  deriving (Show, Eq, Enum)
+
+-- | Weigh configuration.
+data Config = Config {configColumns :: [Column]}
+  deriving (Show)
+
 -- | Weigh specification monad.
 newtype Weigh a =
-  Weigh {runWeigh :: Writer [(String,Action)] a}
+  Weigh {runWeigh :: State (Config, [(String,Action)]) a}
   deriving (Monad,Functor,Applicative)
 
 -- | How much a computation weighed in at.
@@ -78,6 +90,7 @@ data Weight =
          ,weightAllocatedBytes :: !Int64
          ,weightGCs :: !Int64
          ,weightLiveBytes :: !Int64
+         ,weightMaxBytes :: !Int64
          }
   deriving (Read,Show)
 
@@ -94,10 +107,10 @@ data Action =
 -- | Just run the measuring and print a report. Uses 'weighResults'.
 mainWith :: Weigh a -> IO ()
 mainWith m =
-  do results <- weighResults m
+  do (results, config) <- weighResults m
      unless (null results)
             (do putStrLn ""
-                putStrLn (report results))
+                putStrLn (report config results))
      case mapMaybe (\(w,r) ->
                       do msg <- r
                          return (w,msg))
@@ -111,22 +124,38 @@ mainWith m =
 -- | Run the measuring and return all the results, each one may have
 -- an error.
 weighResults
-  :: Weigh a -> IO [(Weight,Maybe String)]
-weighResults m =
-  do args <- getArgs
-     let cases = execWriter (runWeigh m)
-     result <- weighDispatch args cases
-     case result of
-       Nothing -> return []
-       Just weights ->
-         return (map (\w ->
-                        case lookup (weightLabel w) cases of
-                          Nothing -> (w,Nothing)
-                          Just a -> (w,actionCheck a w))
-                     weights)
+  :: Weigh a -> IO ([(Weight,Maybe String)], Config)
+weighResults m = do
+  args <- getArgs
+  let (config, cases) =
+        execState (runWeigh m) (defaultConfig, [])
+  result <- weighDispatch args cases
+  case result of
+    Nothing -> return ([], config)
+    Just weights ->
+      return
+        ( map
+            (\w ->
+               case lookup (weightLabel w) cases of
+                 Nothing -> (w, Nothing)
+                 Just a -> (w, actionCheck a w))
+            weights
+        , config)
 
 --------------------------------------------------------------------------------
 -- User DSL
+
+-- | Default columns to display.
+defaultColumns :: [Column]
+defaultColumns = [Case, Allocated, GCs]
+
+-- | Default config.
+defaultConfig :: Config
+defaultConfig = Config {configColumns = defaultColumns}
+
+-- | Set the config. Default is: 'defaultConfig'.
+setColumns :: [Column] -> Weigh ()
+setColumns cs = Weigh (modify (first (\c -> c {configColumns = cs})))
 
 -- | Weigh a function applied to an argument.
 --
@@ -184,7 +213,7 @@ validateAction :: (NFData a)
                -> (Weight -> Maybe String) -- ^ A validating function, returns maybe an error.
                -> Weigh ()
 validateAction name !m !arg !validate =
-  Weigh (tell [(name,Action (Left m) arg validate)])
+  tellAction [(name,Action (Left m) arg validate)]
 
 -- | Weigh a function, validating the result
 validateFunc :: (NFData a)
@@ -194,7 +223,11 @@ validateFunc :: (NFData a)
              -> (Weight -> Maybe String) -- ^ A validating function, returns maybe an error.
              -> Weigh ()
 validateFunc name !f !x !validate =
-  Weigh (tell [(name,Action (Right f) x validate)])
+  tellAction [(name,Action (Right f) x validate)]
+
+-- | Write out an action.
+tellAction :: [(String, Action)] -> Weigh ()
+tellAction x = Weigh (modify (second ( ++ x)))
 
 --------------------------------------------------------------------------------
 -- Internal measuring actions
@@ -212,14 +245,15 @@ weighDispatch args cases =
         Just act ->
           do case act of
                Action !run arg _ ->
-                 do (bytes,gcs,liveBytes) <-
+                 do (bytes,gcs,liveBytes,maxByte) <-
                       case run of
                         Right f -> weighFunc f arg
                         Left m -> weighAction m arg
                     print (Weight {weightLabel = label
                                   ,weightAllocatedBytes = bytes
                                   ,weightGCs = gcs
-                                  ,weightLiveBytes = liveBytes})
+                                  ,weightLiveBytes = liveBytes
+                                  ,weightMaxBytes = maxByte})
              return Nothing
     _
       | names == nub names -> fmap Just (mapM (fork . fst) cases)
@@ -252,7 +286,7 @@ weighFunc
   :: (NFData a)
   => (b -> a)         -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
+  -> IO (Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
 weighFunc run !arg =
   do performGC
      -- The above forces getGCStats data to be generated NOW.
@@ -277,14 +311,15 @@ weighFunc run !arg =
          actualBytes = max 0 actionBytes
          liveBytes = max 0 (currentBytesUsed actionStats -
                             currentBytesUsed bootupStats)
-     return (actualBytes,actionGCs,liveBytes)
+         maxBytes = max 0 (maxBytesUsed actionStats - maxBytesUsed bootupStats)
+     return (actualBytes,actionGCs,liveBytes, maxBytes)
 
 -- | Weigh a pure function. This function is heavily documented inside.
 weighAction
   :: (NFData a)
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
+  -> IO (Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
 weighAction run !arg =
   do performGC
      -- The above forces getGCStats data to be generated NOW.
@@ -309,33 +344,45 @@ weighAction run !arg =
          actualBytes = max 0 actionBytes
          liveBytes = max 0 (currentBytesUsed actionStats -
                             currentBytesUsed bootupStats)
-     return (actualBytes,actionGCs,liveBytes)
+         maxBytes = max 0 (maxBytesUsed actionStats - maxBytesUsed bootupStats)
+     return (actualBytes,actionGCs,liveBytes, maxBytes)
 
 --------------------------------------------------------------------------------
 -- Formatting functions
 
 -- | Make a report of the weights.
-report :: [(Weight,Maybe String)] -> String
-report =
-  tablize .
-  ([(True,"Case"),(False,"Allocated"),(False,"GCs"),(False,"Live"),(True,"Check")] :) . map toRow
-  where toRow (w,err) =
-          [(True,weightLabel w)
-          ,(False,commas (weightAllocatedBytes w))
-          ,(False,commas (weightGCs w))
-          ,(False, commas (weightLiveBytes w))
-          ,(True
-           ,case err of
+report :: Config -> [(Weight,Maybe String)] -> String
+report config = tablize . (select headings :) . map (select . toRow)
+  where
+    select row = mapMaybe (\name -> lookup name row) (configColumns config)
+    headings =
+      [ (Case, (True, "Case"))
+      , (Allocated, (False, "Allocated"))
+      , (GCs, (False, "GCs"))
+      , (Live, (False, "Live"))
+      , (Check, (True, "Check"))
+      , (Max, (False, "Max"))
+      ]
+    toRow (w, err) =
+      [ (Case, (True, weightLabel w))
+      , (Allocated, (False, commas (weightAllocatedBytes w)))
+      , (GCs, (False, commas (weightGCs w)))
+      , (Live, (False, commas (weightLiveBytes w)))
+      , (Max, (False, commas (weightMaxBytes w)))
+      , ( Check
+        , ( True
+          , case err of
               Nothing -> "OK"
-              Just{} -> "INVALID")]
+              Just {} -> "INVALID"))
+      ]
 
 -- | Make a table out of a list of rows.
 tablize :: [[(Bool,String)]] -> String
 tablize xs =
   intercalate "\n"
               (map (intercalate "  " . map fill . zip [0 ..]) xs)
-  where fill (x',(left,text')) = printf ("%" ++ direction ++ show width ++ "s") text'
-          where direction = if left
+  where fill (x',(left',text')) = printf ("%" ++ direction ++ show width ++ "s") text'
+          where direction = if left'
                                then "-"
                                else ""
                 width = maximum (map (length . snd . (!! x')) xs)
