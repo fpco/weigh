@@ -58,7 +58,7 @@ import Control.Monad.State
 import Data.List
 import Data.List.Split
 import Data.Maybe
-import GHC.Int
+import Data.Int
 import GHC.Stats
 import Prelude
 import System.Environment
