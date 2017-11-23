@@ -59,7 +59,6 @@ import Data.List
 import Data.List.Split
 import Data.Maybe
 import Data.Int
-import GHC.Stats
 import Prelude
 import System.Environment
 import System.Exit
@@ -68,7 +67,7 @@ import System.IO.Temp
 import System.Mem
 import System.Process
 import Text.Printf
-import Weigh.GHCStats
+import qualified Weigh.GHCStats as GHCStats
 
 --------------------------------------------------------------------------------
 -- Types
@@ -303,32 +302,44 @@ weighFunc
   => (b -> a)         -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
   -> IO (Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
-weighFunc run !arg =
-  do performGC
-     -- The above forces getGCStats data to be generated NOW.
-     !bootupStats <- getGCStats
+weighFunc run !arg = do
+  ghcStatsSizeInBytes <- GHCStats.getGhcStatsSizeInBytes
+  performGC
+     -- The above forces getStats data to be generated NOW.
+  !bootupStats <- GHCStats.getStats
      -- We need the above to subtract "program startup" overhead. This
      -- operation itself adds n bytes for the size of GCStats, but we
      -- subtract again that later.
-     let !_ = force (run arg)
-     performGC
-     -- The above forces getGCStats data to be generated NOW.
-     !actionStats <- getGCStats
-     let reflectionGCs = 1 -- We performed an additional GC.
-         actionBytes =
-           (bytesAllocated actionStats - bytesAllocated bootupStats) -
+  let !_ = force (run arg)
+  performGC
+     -- The above forces getStats data to be generated NOW.
+  !actionStats <- GHCStats.getStats
+  let reflectionGCs = 1 -- We performed an additional GC.
+      actionBytes =
+        (GHCStats.totalBytesAllocated actionStats -
+         GHCStats.totalBytesAllocated bootupStats) -
            -- We subtract the size of "bootupStats", which will be
            -- included after we did the performGC.
-           ghcStatsSizeInBytes
-         actionGCs = numGcs actionStats - numGcs bootupStats - reflectionGCs
+        fromIntegral ghcStatsSizeInBytes
+      actionGCs =
+        GHCStats.gcCount actionStats - GHCStats.gcCount bootupStats -
+        reflectionGCs
          -- If overheadBytes is too large, we conservatively just
          -- return zero. It's not perfect, but this library is for
          -- measuring large quantities anyway.
-         actualBytes = max 0 actionBytes
-         liveBytes = max 0 (currentBytesUsed actionStats -
-                            currentBytesUsed bootupStats)
-         maxBytes = max 0 (maxBytesUsed actionStats - maxBytesUsed bootupStats)
-     return (actualBytes,actionGCs,liveBytes, maxBytes)
+      actualBytes = max 0 actionBytes
+      liveBytes =
+        max 0 (GHCStats.liveBytes actionStats - GHCStats.liveBytes bootupStats)
+      maxBytes =
+        max
+          0
+          (GHCStats.maxBytesInUse actionStats -
+           GHCStats.maxBytesInUse bootupStats)
+  return
+    ( fromIntegral actualBytes
+    , fromIntegral actionGCs
+    , fromIntegral liveBytes
+    , fromIntegral maxBytes)
 
 -- | Weigh a pure function. This function is heavily documented inside.
 weighAction
@@ -336,32 +347,44 @@ weighAction
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
   -> IO (Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
-weighAction run !arg =
-  do performGC
-     -- The above forces getGCStats data to be generated NOW.
-     !bootupStats <- getGCStats
+weighAction run !arg = do
+  ghcStatsSizeInBytes <- GHCStats.getGhcStatsSizeInBytes
+  performGC
+     -- The above forces getStats data to be generated NOW.
+  !bootupStats <- GHCStats.getStats
      -- We need the above to subtract "program startup" overhead. This
      -- operation itself adds n bytes for the size of GCStats, but we
      -- subtract again that later.
-     !_ <- fmap force (run arg)
-     performGC
-     -- The above forces getGCStats data to be generated NOW.
-     !actionStats <- getGCStats
-     let reflectionGCs = 1 -- We performed an additional GC.
-         actionBytes =
-           (bytesAllocated actionStats - bytesAllocated bootupStats) -
+  !_ <- fmap force (run arg)
+  performGC
+     -- The above forces getStats data to be generated NOW.
+  !actionStats <- GHCStats.getStats
+  let reflectionGCs = 1 -- We performed an additional GC.
+      actionBytes =
+        (GHCStats.totalBytesAllocated actionStats -
+         GHCStats.totalBytesAllocated bootupStats) -
            -- We subtract the size of "bootupStats", which will be
            -- included after we did the performGC.
-           ghcStatsSizeInBytes
-         actionGCs = numGcs actionStats - numGcs bootupStats - reflectionGCs
+        fromIntegral ghcStatsSizeInBytes
+      actionGCs =
+        GHCStats.gcCount actionStats - GHCStats.gcCount bootupStats -
+        reflectionGCs
          -- If overheadBytes is too large, we conservatively just
          -- return zero. It's not perfect, but this library is for
          -- measuring large quantities anyway.
-         actualBytes = max 0 actionBytes
-         liveBytes = max 0 (currentBytesUsed actionStats -
-                            currentBytesUsed bootupStats)
-         maxBytes = max 0 (maxBytesUsed actionStats - maxBytesUsed bootupStats)
-     return (actualBytes,actionGCs,liveBytes, maxBytes)
+      actualBytes = max 0 actionBytes
+      liveBytes =
+        max 0 (GHCStats.liveBytes actionStats - GHCStats.liveBytes bootupStats)
+      maxBytes =
+        max
+          0
+          (GHCStats.maxBytesInUse actionStats -
+           GHCStats.maxBytesInUse bootupStats)
+  return
+    ( fromIntegral actualBytes
+    , fromIntegral actionGCs
+    , fromIntegral liveBytes
+    , fromIntegral maxBytes)
 
 --------------------------------------------------------------------------------
 -- Formatting functions
