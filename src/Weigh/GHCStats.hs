@@ -59,14 +59,14 @@ getGhcStatsSizeInBytes :: IO Int64
 getGhcStatsSizeInBytes = do
   s1 <- oneGetStats
   s2 <- twoGetSTats
-  pure (fromIntegral (totalBytesAllocated s2 - totalBytesAllocated s1))
+  return (fromIntegral (totalBytesAllocated s2 - totalBytesAllocated s1))
   where
     oneGetStats = do
       performGC
       !s <- getStats
-      pure s
+      return s
     twoGetSTats = do
       performGC
       !_ <- getStats
       !s <- getStats
-      pure s
+      return s
