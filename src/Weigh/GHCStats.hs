@@ -14,8 +14,12 @@ module Weigh.GHCStats
   ,maxBytesInUse)
   where
 
+#if __GLASGOW_HASKELL__ < 802
+import Data.Int
+#else
 import Data.Int
 import Data.Word
+#endif
 import GHC.Stats
 import System.Mem
 
