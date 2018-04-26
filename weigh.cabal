@@ -29,7 +29,6 @@ library
                      , deepseq
                      , mtl
                      , split
-                     , template-haskell
                      , temporary
   default-language:    Haskell2010
 
