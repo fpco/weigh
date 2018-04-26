@@ -1,6 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE CPP #-}
 
 -- | Calculate the size of GHC.Stats statically.
