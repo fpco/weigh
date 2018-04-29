@@ -1,2 +1,2 @@
-resolver: lts-5.8
+resolver: lts-11.3
 #resolver: nightly-2017-11-23
