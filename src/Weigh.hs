@@ -1,3 +1,7 @@
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ExistentialQuantification #-}
@@ -21,6 +25,8 @@
 --         count 0 = ()
 --         count a = count (a - 1)
 -- @
+--
+-- Use 'wgroup' to group sets of tests.
 
 module Weigh
   (-- * Main entry points
@@ -34,6 +40,7 @@ module Weigh
   ,io
   ,value
   ,action
+  ,wgroup
   -- * Validating combinators
   ,validateAction
   ,validateFunc
@@ -55,10 +62,12 @@ import Control.Applicative
 import Control.Arrow
 import Control.DeepSeq
 import Control.Monad.State
+import Data.Foldable
+import Data.Int
 import Data.List
 import Data.List.Split
 import Data.Maybe
-import Data.Int
+import GHC.Generics
 import Prelude
 import System.Environment
 import System.Exit
@@ -77,12 +86,14 @@ data Column = Case | Allocated | GCs| Live | Check | Max
   deriving (Show, Eq, Enum)
 
 -- | Weigh configuration.
-data Config = Config {configColumns :: [Column]}
-  deriving (Show)
+data Config = Config
+  { configColumns :: [Column]
+  , configPrefix :: String
+  } deriving (Show)
 
 -- | Weigh specification monad.
 newtype Weigh a =
-  Weigh {runWeigh :: State (Config, [(String,Action)]) a}
+  Weigh {runWeigh :: State (Config, [Grouped Action]) a}
   deriving (Monad,Functor,Applicative)
 
 -- | How much a computation weighed in at.
@@ -95,51 +106,64 @@ data Weight =
          }
   deriving (Read,Show)
 
+-- | Some grouped thing.
+data Grouped a
+  = Grouped String [Grouped a]
+  | Singleton String a
+  deriving (Eq, Show, Functor, Traversable, Foldable, Generic)
+instance NFData a => NFData (Grouped a)
+
 -- | An action to run.
 data Action =
   forall a b. (NFData a) =>
   Action {_actionRun :: !(Either (b -> IO a) (b -> a))
          ,_actionArg :: !b
+         ,actionName :: !String
          ,actionCheck :: Weight -> Maybe String}
+instance NFData Action where rnf _ = ()
 
 --------------------------------------------------------------------------------
 -- Main-runners
 
 -- | Just run the measuring and print a report. Uses 'weighResults'.
 mainWith :: Weigh a -> IO ()
-mainWith m =
-  do (results, config) <- weighResults m
-     unless (null results)
-            (do putStrLn ""
-                putStrLn (report config results))
-     case mapMaybe (\(w,r) ->
-                      do msg <- r
-                         return (w,msg))
-                   results of
-       [] -> return ()
-       errors ->
-         do putStrLn "\nCheck problems:"
-            mapM_ (\(w,r) -> putStrLn ("  " ++ weightLabel w ++ "\n    " ++ r)) errors
-            exitWith (ExitFailure (-1))
+mainWith m = do
+  (results, config) <- weighResults m
+  unless
+    (null results)
+    (do putStrLn ""
+        putStrLn (report config results))
+  case mapMaybe
+         (\(w, r) -> do
+            msg <- r
+            return (w, msg))
+         (concatMap toList (toList results)) of
+    [] -> return ()
+    errors -> do
+      putStrLn "\nCheck problems:"
+      mapM_
+        (\(w, r) -> putStrLn ("  " ++ weightLabel w ++ "\n    " ++ r))
+        errors
+      exitWith (ExitFailure (-1))
 
 -- | Run the measuring and return all the results, each one may have
 -- an error.
 weighResults
-  :: Weigh a -> IO ([(Weight,Maybe String)], Config)
+  :: Weigh a -> IO ([Grouped (Weight,Maybe String)], Config)
 weighResults m = do
   args <- getArgs
-  let (config, cases) =
-        execState (runWeigh m) (defaultConfig, [])
+  let (config, cases) = execState (runWeigh m) (defaultConfig, [])
   result <- weighDispatch args cases
   case result of
     Nothing -> return ([], config)
     Just weights ->
       return
-        ( map
-            (\w ->
-               case lookup (weightLabel w) cases of
-                 Nothing -> (w, Nothing)
-                 Just a -> (w, actionCheck a w))
+        ( fmap
+            (fmap
+               (\w ->
+                  case glookup (weightLabel w) cases of
+                    Nothing -> (w, Nothing)
+                    Just a -> (w, actionCheck a w)))
             weights
         , config)
 
@@ -152,7 +176,7 @@ defaultColumns = [Case, Allocated, GCs]
 
 -- | Default config.
 defaultConfig :: Config
-defaultConfig = Config {configColumns = defaultColumns}
+defaultConfig = Config {configColumns = defaultColumns, configPrefix = ""}
 
 -- | Set the config. Default is: 'defaultConfig'.
 setColumns :: [Column] -> Weigh ()
@@ -214,7 +238,7 @@ validateAction :: (NFData a)
                -> (Weight -> Maybe String) -- ^ A validating function, returns maybe an error.
                -> Weigh ()
 validateAction name !m !arg !validate =
-  tellAction [(name,Action (Left m) arg validate)]
+  tellAction name (Action (Left m) arg name validate)
 
 -- | Weigh a function, validating the result
 validateFunc :: (NFData a)
@@ -224,11 +248,24 @@ validateFunc :: (NFData a)
              -> (Weight -> Maybe String) -- ^ A validating function, returns maybe an error.
              -> Weigh ()
 validateFunc name !f !x !validate =
-  tellAction [(name,Action (Right f) x validate)]
+  tellAction name (Action (Right f) x name validate)
 
 -- | Write out an action.
-tellAction :: [(String, Action)] -> Weigh ()
-tellAction x = Weigh (modify (second ( ++ x)))
+tellAction :: String -> Action -> Weigh ()
+tellAction name act =
+  Weigh (do prefix <- gets (configPrefix . fst)
+            modify (second (\x -> x ++ [Singleton (prefix ++ "/" ++ name) act])))
+
+-- | Make a grouping of tests.
+wgroup :: String -> Weigh () -> Weigh ()
+wgroup str wei = do
+  (orig, start) <- Weigh get
+  let startL = length $ start
+  Weigh (modify (first (\c -> c {configPrefix = configPrefix orig ++ "/" ++ str})))
+  wei
+  Weigh $ do
+    modify $ second $ \x -> take startL x ++ [Grouped str $ drop startL x]
+    modify (first (\c -> c {configPrefix = configPrefix orig}))
 
 --------------------------------------------------------------------------------
 -- Internal measuring actions
@@ -236,17 +273,17 @@ tellAction x = Weigh (modify (second ( ++ x)))
 -- | Weigh a set of actions. The value of the actions are forced
 -- completely to ensure they are fully allocated.
 weighDispatch :: [String] -- ^ Program arguments.
-              -> [(String,Action)] -- ^ Weigh name:action mapping.
-              -> IO (Maybe [Weight])
+              -> [Grouped Action] -- ^ Weigh name:action mapping.
+              -> IO (Maybe [(Grouped Weight)])
 weighDispatch args cases =
   case args of
     ("--case":label:fp:_) ->
       let !_ = force fp
-      in case lookup label (deepseq (map fst cases) cases) of
+      in case glookup label (force cases) of
            Nothing -> error "No such case!"
            Just act -> do
              case act of
-               Action !run arg _ -> do
+               Action !run arg _ _ -> do
                  (bytes, gcs, liveBytes, maxByte) <-
                    case run of
                      Right f -> weighFunc f arg
@@ -262,15 +299,16 @@ weighDispatch args cases =
                        , weightMaxBytes = maxByte
                        }))
              return Nothing
-    _
-      | names == nub names -> fmap Just (mapM (fork . fst) cases)
-      | otherwise -> error "Non-unique names specified for things to measure."
-      where names = map fst cases
+    _ -> fmap Just (traverse (traverse fork) cases)
+
+-- | Lookup an action.
+glookup :: String -> [Grouped Action] -> Maybe Action
+glookup label = find ((== label) . actionName) . concat . map toList . toList
 
 -- | Fork a case and run it.
-fork :: String -- ^ Label for the case.
+fork :: Action -- ^ Label for the case.
      -> IO Weight
-fork label =
+fork act =
   withSystemTempFile
     "weigh"
     (\fp h -> do
@@ -279,22 +317,23 @@ fork label =
        (exit, _, err) <-
          readProcessWithExitCode
            me
-           ["--case", label, fp, "+RTS", "-T", "-RTS"]
+           ["--case", actionName act, fp, "+RTS", "-T", "-RTS"]
            ""
        case exit of
          ExitFailure {} ->
-           error ("Error in case (" ++ show label ++ "):\n  " ++ err)
-         ExitSuccess ->
-           do out <- readFile fp
-              case reads out of
-                [(!r, _)] -> return r
-                _ ->
-                  error
-                    (concat
-                       [ "Malformed output from subprocess. Weigh"
-                       , " (currently) communicates with its sub-"
-                       , "processes via a temporary file."
-                       ]))
+           error
+             ("Error in case (" ++ show (actionName act) ++ "):\n  " ++ err)
+         ExitSuccess -> do
+           out <- readFile fp
+           case reads out of
+             [(!r, _)] -> return r
+             _ ->
+               error
+                 (concat
+                    [ "Malformed output from subprocess. Weigh"
+                    , " (currently) communicates with its sub-"
+                    , "processes via a temporary file."
+                    ]))
 
 -- | Weigh a pure function. This function is heavily documented inside.
 weighFunc
@@ -389,10 +428,39 @@ weighAction run !arg = do
 --------------------------------------------------------------------------------
 -- Formatting functions
 
--- | Make a report of the weights.
-report :: Config -> [(Weight,Maybe String)] -> String
-report config = tablize . (select headings :) . map (select . toRow)
+report :: Config -> [Grouped (Weight,Maybe String)] -> String
+report config gs =
+  intercalate
+    "\n\n"
+    (filter
+       (not . null)
+       [ if null singletons
+            then []
+            else reportTabular config singletons
+       , intercalate "\n\n" (map (uncurry (reportGroup config)) groups)
+       ])
   where
+    singletons =
+      mapMaybe
+        (\case
+           Singleton _ v -> Just v
+           _ -> Nothing)
+        gs
+    groups =
+      mapMaybe
+        (\case
+           Grouped title vs -> Just (title, vs)
+           _ -> Nothing)
+        gs
+
+reportGroup :: Config -> [Char] -> [Grouped (Weight, Maybe String)] -> [Char]
+reportGroup config title gs = title ++ "\n\n" ++ indent (report config gs)
+
+-- | Make a report of the weights.
+reportTabular :: Config -> [(Weight,Maybe String)] -> String
+reportTabular config = tabled
+  where
+    tabled = tablize . (select headings :) . map (select . toRow)
     select row = mapMaybe (\name -> lookup name row) (configColumns config)
     headings =
       [ (Case, (True, "Case"))
@@ -429,3 +497,7 @@ tablize xs =
 -- | Formatting an integral number to 1,000,000, etc.
 commas :: (Num a,Integral a,Show a) => a -> String
 commas = reverse . intercalate "," . chunksOf 3 . reverse . show
+
+-- | Indent all lines in a string.
+indent :: [Char] -> [Char]
+indent = intercalate "\n" . map (replicate 2 ' '++) . lines

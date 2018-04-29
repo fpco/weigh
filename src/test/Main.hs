@@ -12,11 +12,12 @@ import GHC.Generics
 -- | Weigh integers.
 main :: IO ()
 main =
-  mainWith (do integers
-               ioactions
-               ints
-               struct
-               packing)
+  mainWith
+    (do wgroup "Integers" integers
+        wgroup "IO actions" ioactions
+        wgroup "Ints" ints
+        wgroup "Structs" struct
+        wgroup "Packing" packing)
 
 -- | Weigh IO actions.
 ioactions :: Weigh ()
@@ -31,16 +32,17 @@ ioactions =
 
 -- | Just counting integers.
 integers :: Weigh ()
-integers =
-  do func "integers count 0" count 0
-     func "integers count 1" count 1
-     func "integers count 2" count 2
-     func "integers count 3" count 3
-     func "integers count 10" count 10
-     func "integers count 100" count 100
-  where count :: Integer -> ()
-        count 0 = ()
-        count a = count (a - 1)
+integers = do
+  func "integers count 0" count 0
+  func "integers count 1" count 1
+  func "integers count 2" count 2
+  func "integers count 3" count 3
+  func "integers count 10" count 10
+  func "integers count 100" count 100
+  where
+    count :: Integer -> ()
+    count 0 = ()
+    count a = count (a - 1)
 
 -- | We count ints and ensure that the allocations are optimized away
 -- to only two 64-bit Ints (16 bytes).
@@ -62,7 +64,7 @@ instance NFData IntegerStruct
 struct :: Weigh ()
 struct =
   do func "\\_ -> IntegerStruct 0 0" (\_ -> IntegerStruct 0 0) (5 :: Integer)
-     func "\\x -> IntegerStruct x 0" (\x -> IntegerStruct x 0) 5
+     validateFunc "\\x -> IntegerStruct x 0" (\x -> IntegerStruct x 0) 5 (const (Just "Boo!"))
      func "\\x -> IntegerStruct x x" (\x -> IntegerStruct x x) 5
      func "\\x -> IntegerStruct (x+1) x" (\x -> IntegerStruct (x+1) x) 5
      func "\\x -> IntegerStruct (x+1) (x+1)" (\x -> IntegerStruct (x+1) (x+1)) 5
