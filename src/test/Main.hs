@@ -64,7 +64,7 @@ instance NFData IntegerStruct
 struct :: Weigh ()
 struct =
   do func "\\_ -> IntegerStruct 0 0" (\_ -> IntegerStruct 0 0) (5 :: Integer)
-     validateFunc "\\x -> IntegerStruct x 0" (\x -> IntegerStruct x 0) 5 (const (Just "Boo!"))
+     func "\\x -> IntegerStruct x 0" (\x -> IntegerStruct x 0) 5
      func "\\x -> IntegerStruct x x" (\x -> IntegerStruct x x) 5
      func "\\x -> IntegerStruct (x+1) x" (\x -> IntegerStruct (x+1) x) 5
      func "\\x -> IntegerStruct (x+1) (x+1)" (\x -> IntegerStruct (x+1) (x+1)) 5
