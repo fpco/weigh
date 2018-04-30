@@ -1,3 +1,6 @@
+0.0.7:
+	* Support grouping
+
 0.0.6:
 	* Support GHC 8.2
 	* Use more reliable calculations
