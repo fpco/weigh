@@ -1,5 +1,5 @@
 name:                weigh
-version:             0.0.10
+version:             0.0.11
 synopsis:            Measure allocations of a Haskell functions/values
 description:         Please see README.md
 homepage:            https://github.com/fpco/weigh#readme
