@@ -56,6 +56,8 @@ module Weigh
   ,weighDispatch
   ,weighFunc
   ,weighAction
+  ,Grouped
+  ,Grouped(..)
   )
   where
 
