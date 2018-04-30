@@ -62,9 +62,9 @@ import Control.Applicative
 import Control.Arrow
 import Control.DeepSeq
 import Control.Monad.State
-import Data.Foldable
+import qualified Data.Foldable as Foldable
 import Data.Int
-import Data.List
+import qualified Data.List as List
 import Data.List.Split
 import Data.Maybe
 import GHC.Generics
@@ -137,7 +137,7 @@ mainWith m = do
          (\(w, r) -> do
             msg <- r
             return (w, msg))
-         (concatMap toList (toList results)) of
+         (concatMap Foldable.toList (Foldable.toList results)) of
     [] -> return ()
     errors -> do
       putStrLn "\nCheck problems:"
@@ -303,7 +303,9 @@ weighDispatch args cases =
 
 -- | Lookup an action.
 glookup :: String -> [Grouped Action] -> Maybe Action
-glookup label = find ((== label) . actionName) . concat . map toList . toList
+glookup label =
+  Foldable.find ((== label) . actionName) .
+  concat . map Foldable.toList . Foldable.toList
 
 -- | Fork a case and run it.
 fork :: Action -- ^ Label for the case.
@@ -430,14 +432,14 @@ weighAction run !arg = do
 
 report :: Config -> [Grouped (Weight,Maybe String)] -> String
 report config gs =
-  intercalate
+  List.intercalate
     "\n\n"
     (filter
        (not . null)
        [ if null singletons
-            then []
-            else reportTabular config singletons
-       , intercalate "\n\n" (map (uncurry (reportGroup config)) groups)
+           then []
+           else reportTabular config singletons
+       , List.intercalate "\n\n" (map (uncurry (reportGroup config)) groups)
        ])
   where
     singletons =
@@ -486,8 +488,8 @@ reportTabular config = tabled
 -- | Make a table out of a list of rows.
 tablize :: [[(Bool,String)]] -> String
 tablize xs =
-  intercalate "\n"
-              (map (intercalate "  " . map fill . zip [0 ..]) xs)
+  List.intercalate "\n"
+              (map (List.intercalate "  " . map fill . zip [0 ..]) xs)
   where fill (x',(left',text')) = printf ("%" ++ direction ++ show width ++ "s") text'
           where direction = if left'
                                then "-"
@@ -496,8 +498,8 @@ tablize xs =
 
 -- | Formatting an integral number to 1,000,000, etc.
 commas :: (Num a,Integral a,Show a) => a -> String
-commas = reverse . intercalate "," . chunksOf 3 . reverse . show
+commas = reverse . List.intercalate "," . chunksOf 3 . reverse . show
 
 -- | Indent all lines in a string.
 indent :: [Char] -> [Char]
-indent = intercalate "\n" . map (replicate 2 ' '++) . lines
+indent = List.intercalate "\n" . map (replicate 2 ' '++) . lines
