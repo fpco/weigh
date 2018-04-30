@@ -12,8 +12,6 @@ main =
   mainWith
     (do func "integers count 0" count 0
         func "integers count 1" count 1
-        func "integers count 2" count 2
-        func "integers count 3" count 3
         func "integers count 10" count 10
         func "integers count 100" count 100)
   where
