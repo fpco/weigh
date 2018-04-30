@@ -91,7 +91,11 @@ data Column = Case | Allocated | GCs| Live | Check | Max
 data Config = Config
   { configColumns :: [Column]
   , configPrefix :: String
+  , configFormat :: !Format
   } deriving (Show)
+
+data Format = Plain | Markdown
+  deriving (Show)
 
 -- | Weigh specification monad.
 newtype Weigh a =
@@ -167,7 +171,12 @@ weighResults m = do
                     Nothing -> (w, Nothing)
                     Just a -> (w, actionCheck a w)))
             weights
-        , config)
+        , config
+          { configFormat =
+              if any (== "--markdown") args
+                then Markdown
+                else configFormat config
+          })
 
 --------------------------------------------------------------------------------
 -- User DSL
@@ -178,7 +187,9 @@ defaultColumns = [Case, Allocated, GCs]
 
 -- | Default config.
 defaultConfig :: Config
-defaultConfig = Config {configColumns = defaultColumns, configPrefix = ""}
+defaultConfig =
+  Config
+  {configColumns = defaultColumns, configPrefix = "", configFormat = Plain}
 
 -- | Set the config. Default is: 'defaultConfig'.
 setColumns :: [Column] -> Weigh ()
@@ -458,13 +469,20 @@ report config gs =
         gs
 
 reportGroup :: Config -> [Char] -> [Grouped (Weight, Maybe String)] -> [Char]
-reportGroup config title gs = title ++ "\n\n" ++ indent (report config gs)
+reportGroup config title gs =
+  case configFormat config of
+    Plain -> title ++ "\n\n" ++ indent (report config gs)
+    Markdown -> "#" ++ title ++ "\n\n" ++ report config gs
 
 -- | Make a report of the weights.
 reportTabular :: Config -> [(Weight,Maybe String)] -> String
 reportTabular config = tabled
   where
-    tabled = tablize . (select headings :) . map (select . toRow)
+    tabled =
+      (case configFormat config of
+         Plain -> tablize
+         Markdown -> mdtable) .
+      (select headings :) . map (select . toRow)
     select row = mapMaybe (\name -> lookup name row) (configColumns config)
     headings =
       [ (Case, (True, "Case"))
@@ -487,16 +505,36 @@ reportTabular config = tabled
               Just {} -> "INVALID"))
       ]
 
+-- | Make a markdown table.
+mdtable ::[[(Bool,String)]] -> String
+mdtable rows = List.intercalate "\n" [heading, align, body]
+  where
+    heading = columns (map (\(_, str) -> str) (fromMaybe [] (listToMaybe rows)))
+    align =
+      columns
+        (map
+           (\(shouldAlignLeft, _) ->
+              if shouldAlignLeft
+                then ":---"
+                else "---:")
+           (fromMaybe [] (listToMaybe rows)))
+    body =
+      List.intercalate "\n" (map (\row -> columns (map snd row)) (drop 1 rows))
+    columns xs = "|" ++ List.intercalate "|" xs ++ "|"
+
 -- | Make a table out of a list of rows.
 tablize :: [[(Bool,String)]] -> String
 tablize xs =
-  List.intercalate "\n"
-              (map (List.intercalate "  " . map fill . zip [0 ..]) xs)
-  where fill (x',(left',text')) = printf ("%" ++ direction ++ show width ++ "s") text'
-          where direction = if left'
-                               then "-"
-                               else ""
-                width = maximum (map (length . snd . (!! x')) xs)
+  List.intercalate "\n" (map (List.intercalate "  " . map fill . zip [0 ..]) xs)
+  where
+    fill (x', (left', text')) =
+      printf ("%" ++ direction ++ show width ++ "s") text'
+      where
+        direction =
+          if left'
+            then "-"
+            else ""
+        width = maximum (map (length . snd . (!! x')) xs)
 
 -- | Formatting an integral number to 1,000,000, etc.
 commas :: (Num a,Integral a,Show a) => a -> String

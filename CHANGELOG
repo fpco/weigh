@@ -1,4 +1,7 @@
-0.0.7:
+0.0.9:
+	* Support markdown output
+
+0.0.8:
 	* Support grouping
 
 0.0.6:

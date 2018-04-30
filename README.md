@@ -22,12 +22,14 @@ main =
 
 Output results:
 
-```
-Case                Allocated  GCs
-integers count 0           16    0
-integers count 1           88    0
-integers count 2          160    0
-integers count 3          232    0
-integers count 10         736    0
-integers count 100      7,216    0
-```
+|Case|Allocated|GCs|
+|:---|---:|---:|
+|integers count 0|16|0|
+|integers count 1|88|0|
+|integers count 2|160|0|
+|integers count 3|232|0|
+|integers count 10|736|0|
+|integers count 100|7,216|0|
+
+Output by default is plain text table; pass `--markdown` to get a
+markdown output like the above.
