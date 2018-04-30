@@ -396,7 +396,7 @@ weighFunc run !arg = do
     , fromIntegral liveBytes
     , fromIntegral maxBytes)
 
--- | Weigh a pure function. This function is heavily documented inside.
+-- | Weigh an IO action. This function is heavily documented inside.
 weighAction
   :: (NFData a)
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
