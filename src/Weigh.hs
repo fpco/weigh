@@ -11,6 +11,9 @@
 
 -- | Framework for seeing how much a function allocates.
 --
+-- WARNING: weigh is incompatible with profiling. It reports much more
+-- allocations with profiling turned on.
+--
 -- Example:
 --
 -- @
