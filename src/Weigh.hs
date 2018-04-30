@@ -63,6 +63,7 @@ import Control.Arrow
 import Control.DeepSeq
 import Control.Monad.State
 import qualified Data.Foldable as Foldable
+import qualified Data.Traversable as Traversable
 import Data.Int
 import qualified Data.List as List
 import Data.List.Split
@@ -110,7 +111,7 @@ data Weight =
 data Grouped a
   = Grouped String [Grouped a]
   | Singleton String a
-  deriving (Eq, Show, Functor, Traversable, Foldable, Generic)
+  deriving (Eq, Show, Functor, Traversable.Traversable, Foldable.Foldable, Generic)
 instance NFData a => NFData (Grouped a)
 
 -- | An action to run.
@@ -299,7 +300,7 @@ weighDispatch args cases =
                        , weightMaxBytes = maxByte
                        }))
              return Nothing
-    _ -> fmap Just (traverse (traverse fork) cases)
+    _ -> fmap Just (Traversable.traverse (Traversable.traverse fork) cases)
 
 -- | Lookup an action.
 glookup :: String -> [Grouped Action] -> Maybe Action
