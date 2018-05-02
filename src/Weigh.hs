@@ -161,7 +161,7 @@ mainWith m = do
 weighResults
   :: Weigh a -> IO ([Grouped (Weight,Maybe String)], Config)
 weighResults m = do
-  args <- getArgs
+  args <- lookupEnv "WEIGH_CASE"
   let (config, cases) = execState (runWeigh m) (defaultConfig, [])
   result <- weighDispatch args cases
   case result of
@@ -289,33 +289,34 @@ wgroup str wei = do
 
 -- | Weigh a set of actions. The value of the actions are forced
 -- completely to ensure they are fully allocated.
-weighDispatch :: [String] -- ^ Program arguments.
+weighDispatch :: Maybe String -- ^ The content of then env variable WEIGH_CASE.
               -> [Grouped Action] -- ^ Weigh name:action mapping.
               -> IO (Maybe [(Grouped Weight)])
 weighDispatch args cases =
   case args of
-    ("--case":label:fp:_) ->
+    Just var -> do
+      let (label:fp:_) = read var
       let !_ = force fp
-      in case glookup label (force cases) of
-           Nothing -> error "No such case!"
-           Just act -> do
-             case act of
-               Action !run arg _ _ -> do
-                 (bytes, gcs, liveBytes, maxByte) <-
-                   case run of
-                     Right f -> weighFunc f arg
-                     Left m -> weighAction m arg
-                 writeFile
-                   fp
-                   (show
-                      (Weight
-                       { weightLabel = label
-                       , weightAllocatedBytes = bytes
-                       , weightGCs = gcs
-                       , weightLiveBytes = liveBytes
-                       , weightMaxBytes = maxByte
-                       }))
-             return Nothing
+      case glookup label (force cases) of
+        Nothing -> error "No such case!"
+        Just act -> do
+          case act of
+            Action !run arg _ _ -> do
+              (bytes, gcs, liveBytes, maxByte) <-
+                case run of
+                  Right f -> weighFunc f arg
+                  Left m -> weighAction m arg
+              writeFile
+                fp
+                (show
+                   (Weight
+                    { weightLabel = label
+                    , weightAllocatedBytes = bytes
+                    , weightGCs = gcs
+                    , weightLiveBytes = liveBytes
+                    , weightMaxBytes = maxByte
+                    }))
+          return Nothing
     _ -> fmap Just (Traversable.traverse (Traversable.traverse fork) cases)
 
 -- | Lookup an action.
@@ -332,11 +333,12 @@ fork act =
     "weigh"
     (\fp h -> do
        hClose h
+       setEnv "WEIGH_CASE" $ show $ [actionName act,fp]
        me <- getExecutablePath
        (exit, _, err) <-
          readProcessWithExitCode
            me
-           ["--case", actionName act, fp, "+RTS", "-T", "-RTS"]
+           ["+RTS", "-T", "-RTS"]
            ""
        case exit of
          ExitFailure {} ->
