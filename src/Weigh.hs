@@ -161,9 +161,10 @@ mainWith m = do
 weighResults
   :: Weigh a -> IO ([Grouped (Weight,Maybe String)], Config)
 weighResults m = do
-  args <- lookupEnv "WEIGH_CASE"
+  args <- getArgs
+  weighEnv <- lookupEnv "WEIGH_CASE"
   let (config, cases) = execState (runWeigh m) (defaultConfig, [])
-  result <- weighDispatch args cases
+  result <- weighDispatch weighEnv cases
   case result of
     Nothing -> return ([], config)
     Just weights ->
