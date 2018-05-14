@@ -6,7 +6,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE BangPatterns #-}
 
 -- | Framework for seeing how much a function allocates.
@@ -39,6 +38,8 @@ module Weigh
   -- * Configuration
   ,setColumns
   ,Column(..)
+  ,setFormat
+  ,Format (..)
   -- * Simple combinators
   ,func
   ,io
@@ -55,6 +56,7 @@ module Weigh
   ,Weight(..)
   -- * Handy utilities
   ,commas
+  ,reportGroup
   -- * Internals
   ,weighDispatch
   ,weighFunc
@@ -199,6 +201,10 @@ defaultConfig =
 -- | Set the config. Default is: 'defaultConfig'.
 setColumns :: [Column] -> Weigh ()
 setColumns cs = Weigh (modify (first (\c -> c {configColumns = cs})))
+
+-- | Set the default format
+setFormat :: Format -> Weigh ()
+setFormat fm = Weigh (modify (first (\c -> c {configFormat = fm})))
 
 -- | Weigh a function applied to an argument.
 --
@@ -459,7 +465,7 @@ report config gs =
        [ if null singletons
            then []
            else reportTabular config singletons
-       , List.intercalate "\n\n" (map (uncurry (reportGroup config)) groups)
+       , List.intercalate "\n\n" (map (uncurry (reportGroup' config)) groups)
        ])
   where
     singletons =
@@ -475,8 +481,12 @@ report config gs =
            _ -> Nothing)
         gs
 
-reportGroup :: Config -> [Char] -> [Grouped (Weight, Maybe String)] -> [Char]
-reportGroup config title gs =
+-- | Generate a report, using the config
+reportGroup :: String -> [Grouped (Weight, Maybe String)] -> Weigh String
+reportGroup title gs = Weigh get >>= \(config,_) -> return $ reportGroup' config title gs
+
+reportGroup' :: Config -> [Char] -> [Grouped (Weight, Maybe String)] -> [Char]
+reportGroup' config title gs =
   case configFormat config of
     Plain -> title ++ "\n\n" ++ indent (report config gs)
     Markdown -> "#" ++ title ++ "\n\n" ++ report config gs
