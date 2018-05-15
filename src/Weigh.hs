@@ -39,6 +39,11 @@ module Weigh
   -- * Configuration
   ,setColumns
   ,Column(..)
+  ,setFormat
+  ,Format (..)
+  ,setConfig
+  ,Config (..)
+  ,defaultConfig
   -- * Simple combinators
   ,func
   ,io
@@ -55,6 +60,7 @@ module Weigh
   ,Weight(..)
   -- * Handy utilities
   ,commas
+  ,reportGroup
   -- * Internals
   ,weighDispatch
   ,weighFunc
@@ -196,9 +202,17 @@ defaultConfig =
   Config
   {configColumns = defaultColumns, configPrefix = "", configFormat = Plain}
 
--- | Set the config. Default is: 'defaultConfig'.
+-- | Set the columns to display in the config
 setColumns :: [Column] -> Weigh ()
 setColumns cs = Weigh (modify (first (\c -> c {configColumns = cs})))
+
+-- | Set the output format in the config
+setFormat :: Format -> Weigh ()
+setFormat fm = Weigh (modify (first (\c -> c {configFormat = fm})))
+
+-- | Set the config. Default is: 'defaultConfig'.
+setConfig :: Config -> Weigh ()
+setConfig = Weigh . modify . first . const
 
 -- | Weigh a function applied to an argument.
 --
