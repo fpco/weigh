@@ -125,7 +125,7 @@ data Weight =
 -- | Some grouped thing.
 data Grouped a
   = Grouped String [Grouped a]
-  | Singleton String a
+  | Singleton a
   deriving (Eq, Show, Functor, Traversable.Traversable, Foldable.Foldable, Generic)
 instance NFData a => NFData (Grouped a)
 
@@ -270,7 +270,7 @@ validateAction :: (NFData a)
                -> (Weight -> Maybe String) -- ^ A validating function, returns maybe an error.
                -> Weigh ()
 validateAction name !m !arg !validate =
-  tellAction name (Action (Left m) arg name validate)
+  tellAction name $ flip (Action (Left m) arg) validate
 
 -- | Weigh a function, validating the result
 validateFunc :: (NFData a)
@@ -280,13 +280,13 @@ validateFunc :: (NFData a)
              -> (Weight -> Maybe String) -- ^ A validating function, returns maybe an error.
              -> Weigh ()
 validateFunc name !f !x !validate =
-  tellAction name (Action (Right f) x name validate)
+  tellAction name $ flip (Action (Right f) x)  validate
 
 -- | Write out an action.
-tellAction :: String -> Action -> Weigh ()
+tellAction :: String -> (String -> Action) -> Weigh ()
 tellAction name act =
   Weigh (do prefix <- gets (configPrefix . fst)
-            modify (second (\x -> x ++ [Singleton (prefix ++ "/" ++ name) act])))
+            modify (second (\x -> x ++ [Singleton $ act (prefix ++ "/" ++ name)])))
 
 -- | Make a grouping of tests.
 wgroup :: String -> Weigh () -> Weigh ()
@@ -479,7 +479,7 @@ report config gs =
     singletons =
       mapMaybe
         (\case
-           Singleton _ v -> Just v
+           Singleton v -> Just v
            _ -> Nothing)
         gs
     groups =
@@ -514,7 +514,7 @@ reportTabular config = tabled
       , (Max, (False, "Max"))
       ]
     toRow (w, err) =
-      [ (Case, (True, weightLabel w))
+      [ (Case, (True, takeLastAfterBk $ weightLabel w))
       , (Allocated, (False, commas (weightAllocatedBytes w)))
       , (GCs, (False, commas (weightGCs w)))
       , (Live, (False, commas (weightLiveBytes w)))
@@ -525,6 +525,9 @@ reportTabular config = tabled
               Nothing -> "OK"
               Just {} -> "INVALID"))
       ]
+    takeLastAfterBk w = case List.elemIndices '/' w of
+                       [] -> w
+                       x  -> drop (1+last x) w
 
 -- | Make a markdown table.
 mdtable ::[[(Bool,String)]] -> String

@@ -9,6 +9,8 @@ import Control.DeepSeq
 import Weigh
 import GHC.Generics
 
+import Data.List (nub)
+
 -- | Weigh integers.
 main :: IO ()
 main =
@@ -17,7 +19,10 @@ main =
         wgroup "IO actions" ioactions
         wgroup "Ints" ints
         wgroup "Structs" struct
-        wgroup "Packing" packing)
+        wgroup "Packing" packing
+        wgroup "fst" aFuncNamedId
+        wgroup "snd" anotherFuncNamedId
+    )
 
 -- | Weigh IO actions.
 ioactions :: Weigh ()
@@ -91,3 +96,9 @@ packing =
   do func "\\x -> HasInt x" (\x -> HasInt x) 5
      func "\\x -> HasUnpacked (HasInt x)" (\x -> HasUnpacked (HasInt x)) 5
      func "\\x -> HasPacked (HasInt x)" (\x -> HasPacked (HasInt x)) 5
+
+aFuncNamedId :: Weigh ()
+aFuncNamedId = func "id" id (1::Int)
+
+anotherFuncNamedId :: Weigh ()
+anotherFuncNamedId = func "id" nub ([1,2,3,4,5,1]::[Int])
