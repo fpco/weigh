@@ -125,7 +125,7 @@ data Weight =
 -- | Some grouped thing.
 data Grouped a
   = Grouped String [Grouped a]
-  | Singleton String a
+  | Singleton a
   deriving (Eq, Show, Functor, Traversable.Traversable, Foldable.Foldable, Generic)
 instance NFData a => NFData (Grouped a)
 
@@ -286,9 +286,7 @@ validateFunc name !f !x !validate =
 tellAction :: String -> (String -> Action) -> Weigh ()
 tellAction name act =
   Weigh (do prefix <- gets (configPrefix . fst)
-            modify (second (\x -> x ++ [Singleton name $ act $ prefixed prefix])))
-        where
-          prefixed prefix = prefix ++ "/" ++ name
+            modify (second (\x -> x ++ [Singleton $ act (prefix ++ "/" ++ name)])))
 
 -- | Make a grouping of tests.
 wgroup :: String -> Weigh () -> Weigh ()
@@ -481,7 +479,7 @@ report config gs =
     singletons =
       mapMaybe
         (\case
-           Singleton _ v -> Just v
+           Singleton v -> Just v
            _ -> Nothing)
         gs
     groups =
