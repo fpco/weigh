@@ -1,3 +1,6 @@
+0.0.12:
+	* Fix bug in non-unique groupings
+
 0.0.10:
 	* Export Grouped
 
