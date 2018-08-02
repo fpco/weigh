@@ -64,7 +64,9 @@ module Weigh
   -- * Internals
   ,weighDispatch
   ,weighFunc
+  ,weighFuncResult
   ,weighAction
+  ,weighActionResult
   ,Grouped(..)
   )
   where
@@ -371,13 +373,23 @@ fork act =
                     , "processes via a temporary file."
                     ]))
 
--- | Weigh a pure function. This function is heavily documented inside.
+-- | Weigh a pure function. This function is built on top of `weighFuncResult`,
+--   which is heavily documented inside
 weighFunc
   :: (NFData a)
   => (b -> a)         -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
   -> IO (Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
-weighFunc run !arg = do
+weighFunc run !arg = snd <$> weighFuncResult run arg
+
+-- | Weigh a pure function and return the result. This function is heavily
+--   documented inside.
+weighFuncResult
+  :: (NFData a)
+  => (b -> a)         -- ^ A function whose memory use we want to measure.
+  -> b                -- ^ Argument to the function. Doesn't have to be forced.
+  -> IO (a, (Int64,Int64,Int64,Int64)) -- ^ Result, Bytes allocated, GCs.
+weighFuncResult run !arg = do
   ghcStatsSizeInBytes <- GHCStats.getGhcStatsSizeInBytes
   performGC
      -- The above forces getStats data to be generated NOW.
@@ -385,7 +397,7 @@ weighFunc run !arg = do
      -- We need the above to subtract "program startup" overhead. This
      -- operation itself adds n bytes for the size of GCStats, but we
      -- subtract again that later.
-  let !_ = force (run arg)
+  let !result = force (run arg)
   performGC
      -- The above forces getStats data to be generated NOW.
   !actionStats <- GHCStats.getStats
@@ -410,19 +422,29 @@ weighFunc run !arg = do
           0
           (GHCStats.maxBytesInUse actionStats -
            GHCStats.maxBytesInUse bootupStats)
-  return
+  return (result,
     ( fromIntegral actualBytes
     , fromIntegral actionGCs
     , fromIntegral liveBytes
-    , fromIntegral maxBytes)
+    , fromIntegral maxBytes))
 
--- | Weigh an IO action. This function is heavily documented inside.
+-- | Weigh an IO action. This function is based on `weighActionResult`, which is
+--   heavily documented inside.
 weighAction
   :: (NFData a)
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
   -> IO (Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
-weighAction run !arg = do
+weighAction run !arg = snd <$> weighActionResult run arg
+
+-- | Weigh an IO action, and return the result. This function is heavily
+--   documented inside.
+weighActionResult
+  :: (NFData a)
+  => (b -> IO a)      -- ^ A function whose memory use we want to measure.
+  -> b                -- ^ Argument to the function. Doesn't have to be forced.
+  -> IO (a, (Int64,Int64,Int64,Int64)) -- ^ Result, Bytes allocated and GCs.
+weighActionResult run !arg = do
   ghcStatsSizeInBytes <- GHCStats.getGhcStatsSizeInBytes
   performGC
      -- The above forces getStats data to be generated NOW.
@@ -430,7 +452,7 @@ weighAction run !arg = do
      -- We need the above to subtract "program startup" overhead. This
      -- operation itself adds n bytes for the size of GCStats, but we
      -- subtract again that later.
-  !_ <- fmap force (run arg)
+  !result <- fmap force (run arg)
   performGC
      -- The above forces getStats data to be generated NOW.
   !actionStats <- GHCStats.getStats
@@ -455,11 +477,11 @@ weighAction run !arg = do
           0
           (GHCStats.maxBytesInUse actionStats -
            GHCStats.maxBytesInUse bootupStats)
-  return
+  return (result,
     ( fromIntegral actualBytes
     , fromIntegral actionGCs
     , fromIntegral liveBytes
-    , fromIntegral maxBytes)
+    , fromIntegral maxBytes))
 
 --------------------------------------------------------------------------------
 -- Formatting functions
