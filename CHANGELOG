@@ -1,3 +1,6 @@
+0.0.13:
+	* Forward arguments to the child process
+
 0.0.12:
 	* Fix bug in non-unique groupings
 
