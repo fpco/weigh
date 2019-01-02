@@ -352,10 +352,11 @@ fork act =
        hClose h
        setEnv "WEIGH_CASE" $ show $ [actionName act,fp]
        me <- getExecutablePath
+       args <- getArgs
        (exit, _, err) <-
          readProcessWithExitCode
            me
-           ["+RTS", "-T", "-RTS"]
+           (args ++ ["+RTS", "-T", "-RTS"])
            ""
        case exit of
          ExitFailure {} ->
