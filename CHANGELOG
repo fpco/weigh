@@ -1,3 +1,6 @@
+0.0.14:
+	* Use the correct data source for final live bytes total
+
 0.0.13:
 	* Forward arguments to the child process
 
