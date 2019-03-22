@@ -51,7 +51,7 @@ totalBytesAllocated :: RTSStats -> Word64
 totalBytesAllocated = allocated_bytes
 
 liveBytes :: RTSStats -> Word64
-liveBytes = cumulative_live_bytes
+liveBytes = gcdetails_live_bytes . gc
 
 maxBytesInUse :: RTSStats -> Word64
 maxBytesInUse = max_live_bytes
@@ -61,14 +61,14 @@ maxBytesInUse = max_live_bytes
 getGhcStatsSizeInBytes :: IO Int64
 getGhcStatsSizeInBytes = do
   s1 <- oneGetStats
-  s2 <- twoGetSTats
+  s2 <- twoGetStats
   return (fromIntegral (totalBytesAllocated s2 - totalBytesAllocated s1))
   where
     oneGetStats = do
       performGC
       !s <- getStats
       return s
-    twoGetSTats = do
+    twoGetStats = do
       performGC
       !_ <- getStats
       !s <- getStats
