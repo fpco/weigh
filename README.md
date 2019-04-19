@@ -2,6 +2,10 @@
 
 Measures the memory usage of a Haskell value or function
 
+# Limitations
+
+*  :warning: Turn off the `-threaded` flag, otherwise it will cause inconsistent results.
+
 ## Example use
 
 ``` haskell
