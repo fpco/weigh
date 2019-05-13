@@ -46,6 +46,7 @@ module Weigh
   ,defaultConfig
   -- * Simple combinators
   ,func
+  ,func'
   ,io
   ,value
   ,action
@@ -225,6 +226,15 @@ func :: (NFData a)
      -> b        -- ^ Argument to that function.
      -> Weigh ()
 func name !f !x = validateFunc name f x (const Nothing)
+
+-- | Weigh a function applied to an argument. Unlike 'func', the argument
+-- is evaluated to normal form before the function is applied.
+func' :: (NFData a, NFData b)
+      => String
+      -> (b -> a)
+      -> b
+      -> Weigh ()
+func' name !f (force -> !x) = validateFunc name f x (const Nothing)
 
 -- | Weigh an action applied to an argument.
 --
