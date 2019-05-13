@@ -234,7 +234,7 @@ func' :: (NFData a, NFData b)
       -> (b -> a)
       -> b
       -> Weigh ()
-func' name f x = rnf x `seq` validateFunc name f x (const Nothing)
+func' name !f (force -> !x) = validateFunc name f x (const Nothing)
 
 -- | Weigh an action applied to an argument.
 --
