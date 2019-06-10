@@ -54,7 +54,7 @@ liveBytes :: RTSStats -> Word64
 liveBytes = gcdetails_live_bytes . gc
 
 maxBytesInUse :: RTSStats -> Word64
-maxBytesInUse = max_live_bytes
+maxBytesInUse = max_mem_in_use_bytes
 #endif
 
 -- | Get the size of a 'RTSStats' object in bytes.
