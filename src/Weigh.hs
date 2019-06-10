@@ -97,7 +97,13 @@ import qualified Weigh.GHCStats as GHCStats
 -- Types
 
 -- | Table column.
-data Column = Case | Allocated | GCs| Live | Check | Max
+data Column
+  = Case      -- ^ Case name for the column
+  | Allocated -- ^ Total bytes allocated
+  | GCs       -- ^ Total number of GCs
+  | Live      -- ^ Total amount of live data in the heap
+  | Check     -- ^ Table column indicating about the test status
+  | Max       -- ^ Maximum memory in use
   deriving (Show, Eq, Enum)
 
 -- | Weigh configuration.
