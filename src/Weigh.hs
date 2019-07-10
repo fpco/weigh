@@ -97,7 +97,16 @@ import qualified Weigh.GHCStats as GHCStats
 -- Types
 
 -- | Table column.
-data Column = Case | Allocated | GCs| Live | Check | Max
+data Column
+  = Case      -- ^ Case name for the column
+  | Allocated -- ^ Total bytes allocated
+  | GCs       -- ^ Total number of GCs
+  | Live      -- ^ Total amount of live data in the heap
+  | Check     -- ^ Table column indicating about the test status
+  | Max       -- ^ Maximum residency memory in use
+  | MaxOS     -- ^ Maximum memory in use by the RTS. Valid only for
+              -- GHC >= 8.2.2. For unsupported GHC, this is reported
+              -- as 0.
   deriving (Show, Eq, Enum)
 
 -- | Weigh configuration.
@@ -122,6 +131,7 @@ data Weight =
          ,weightGCs :: !Int64
          ,weightLiveBytes :: !Int64
          ,weightMaxBytes :: !Int64
+         ,weightMaxOSBytes :: !Int64
          }
   deriving (Read,Show)
 
@@ -329,7 +339,7 @@ weighDispatch args cases =
         Just act -> do
           case act of
             Action !run arg _ _ -> do
-              (bytes, gcs, liveBytes, maxByte) <-
+              (bytes, gcs, liveBytes, maxByte, maxOSBytes) <-
                 case run of
                   Right f -> weighFunc f arg
                   Left m -> weighAction m arg
@@ -342,6 +352,7 @@ weighDispatch args cases =
                     , weightGCs = gcs
                     , weightLiveBytes = liveBytes
                     , weightMaxBytes = maxByte
+                    , weightMaxOSBytes = maxOSBytes
                     }))
           return Nothing
     _ -> fmap Just (Traversable.traverse (Traversable.traverse fork) cases)
@@ -390,7 +401,7 @@ weighFunc
   :: (NFData a)
   => (b -> a)         -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
+  -> IO (Int64,Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
 weighFunc run !arg = snd <$> weighFuncResult run arg
 
 -- | Weigh a pure function and return the result. This function is heavily
@@ -399,7 +410,7 @@ weighFuncResult
   :: (NFData a)
   => (b -> a)         -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (a, (Int64,Int64,Int64,Int64)) -- ^ Result, Bytes allocated, GCs.
+  -> IO (a, (Int64,Int64,Int64,Int64,Int64)) -- ^ Result, Bytes allocated, GCs.
 weighFuncResult run !arg = do
   ghcStatsSizeInBytes <- GHCStats.getGhcStatsSizeInBytes
   performGC
@@ -433,11 +444,18 @@ weighFuncResult run !arg = do
           0
           (GHCStats.maxBytesInUse actionStats -
            GHCStats.maxBytesInUse bootupStats)
+      maxOSBytes =
+        max
+          0
+          (GHCStats.maxOSBytes actionStats -
+           GHCStats.maxOSBytes bootupStats)
   return (result,
     ( fromIntegral actualBytes
     , fromIntegral actionGCs
     , fromIntegral liveBytes
-    , fromIntegral maxBytes))
+    , fromIntegral maxBytes
+    , fromIntegral maxOSBytes
+    ))
 
 -- | Weigh an IO action. This function is based on `weighActionResult`, which is
 --   heavily documented inside.
@@ -445,7 +463,7 @@ weighAction
   :: (NFData a)
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
+  -> IO (Int64,Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
 weighAction run !arg = snd <$> weighActionResult run arg
 
 -- | Weigh an IO action, and return the result. This function is heavily
@@ -454,7 +472,7 @@ weighActionResult
   :: (NFData a)
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (a, (Int64,Int64,Int64,Int64)) -- ^ Result, Bytes allocated and GCs.
+  -> IO (a, (Int64,Int64,Int64,Int64,Int64)) -- ^ Result, Bytes allocated and GCs.
 weighActionResult run !arg = do
   ghcStatsSizeInBytes <- GHCStats.getGhcStatsSizeInBytes
   performGC
@@ -488,11 +506,18 @@ weighActionResult run !arg = do
           0
           (GHCStats.maxBytesInUse actionStats -
            GHCStats.maxBytesInUse bootupStats)
+      maxOSBytes =
+        max
+          0
+          (GHCStats.maxOSBytes actionStats -
+           GHCStats.maxOSBytes bootupStats)
   return (result,
     ( fromIntegral actualBytes
     , fromIntegral actionGCs
     , fromIntegral liveBytes
-    , fromIntegral maxBytes))
+    , fromIntegral maxBytes
+    , fromIntegral maxOSBytes
+    ))
 
 --------------------------------------------------------------------------------
 -- Formatting functions
@@ -545,6 +570,7 @@ reportTabular config = tabled
       , (Live, (False, "Live"))
       , (Check, (True, "Check"))
       , (Max, (False, "Max"))
+      , (MaxOS, (False, "MaxOS"))
       ]
     toRow (w, err) =
       [ (Case, (True, takeLastAfterBk $ weightLabel w))
@@ -552,6 +578,7 @@ reportTabular config = tabled
       , (GCs, (False, commas (weightGCs w)))
       , (Live, (False, commas (weightLiveBytes w)))
       , (Max, (False, commas (weightMaxBytes w)))
+      , (MaxOS, (False, commas (weightMaxOSBytes w)))
       , ( Check
         , ( True
           , case err of

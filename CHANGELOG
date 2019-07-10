@@ -1,3 +1,7 @@
+0.0.15:
+	* Add MaxOS parameter to indicate memory in use by RTS
+	* Add haddock docmentation to the 'Column' type
+
 0.0.14:
 	* Use the correct data source for final live bytes total
 
