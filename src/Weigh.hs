@@ -77,11 +77,11 @@ import Control.Arrow
 import Control.DeepSeq
 import Control.Monad.State
 import qualified Data.Foldable as Foldable
-import qualified Data.Traversable as Traversable
-import Data.Int
 import qualified Data.List as List
 import Data.List.Split
 import Data.Maybe
+import qualified Data.Traversable as Traversable
+import Data.Word
 import GHC.Generics
 import Prelude
 import System.Environment
@@ -127,11 +127,11 @@ newtype Weigh a =
 -- | How much a computation weighed in at.
 data Weight =
   Weight {weightLabel :: !String
-         ,weightAllocatedBytes :: !Int64
-         ,weightGCs :: !Int64
-         ,weightLiveBytes :: !Int64
-         ,weightMaxBytes :: !Int64
-         ,weightMaxOSBytes :: !Int64
+         ,weightAllocatedBytes :: !Word64
+         ,weightGCs :: !Word32
+         ,weightLiveBytes :: !Word64
+         ,weightMaxBytes :: !Word64
+         ,weightMaxOSBytes :: !Word64
          }
   deriving (Read,Show)
 
@@ -275,7 +275,7 @@ action :: NFData a
 action name !m = io name (const m) ()
 
 -- | Make a validator that set sthe maximum allocations.
-maxAllocs :: Int64 -- ^ The upper bound.
+maxAllocs :: Word64 -- ^ The upper bound.
           -> (Weight -> Maybe String)
 maxAllocs n =
   \w ->
@@ -401,7 +401,7 @@ weighFunc
   :: (NFData a)
   => (b -> a)         -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (Int64,Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
+  -> IO (Word64,Word32,Word64,Word64,Word64) -- ^ Bytes allocated and garbage collections.
 weighFunc run !arg = snd <$> weighFuncResult run arg
 
 -- | Weigh a pure function and return the result. This function is heavily
@@ -410,7 +410,7 @@ weighFuncResult
   :: (NFData a)
   => (b -> a)         -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (a, (Int64,Int64,Int64,Int64,Int64)) -- ^ Result, Bytes allocated, GCs.
+  -> IO (a, (Word64,Word32,Word64,Word64,Word64)) -- ^ Result, Bytes allocated, GCs.
 weighFuncResult run !arg = do
   ghcStatsSizeInBytes <- GHCStats.getGhcStatsSizeInBytes
   performGC
@@ -425,37 +425,34 @@ weighFuncResult run !arg = do
   !actionStats <- GHCStats.getStats
   let reflectionGCs = 1 -- We performed an additional GC.
       actionBytes =
-        (GHCStats.totalBytesAllocated actionStats -
-         GHCStats.totalBytesAllocated bootupStats) -
+        (GHCStats.totalBytesAllocated actionStats `subtracting`
+         GHCStats.totalBytesAllocated bootupStats) `subtracting`
            -- We subtract the size of "bootupStats", which will be
            -- included after we did the performGC.
         fromIntegral ghcStatsSizeInBytes
       actionGCs =
-        GHCStats.gcCount actionStats - GHCStats.gcCount bootupStats -
+        GHCStats.gcCount actionStats `subtracting` GHCStats.gcCount bootupStats `subtracting`
         reflectionGCs
          -- If overheadBytes is too large, we conservatively just
          -- return zero. It's not perfect, but this library is for
          -- measuring large quantities anyway.
       actualBytes = max 0 actionBytes
       liveBytes =
-        max 0 (GHCStats.liveBytes actionStats - GHCStats.liveBytes bootupStats)
+        (GHCStats.liveBytes actionStats `subtracting`
+         GHCStats.liveBytes bootupStats)
       maxBytes =
-        max
-          0
-          (GHCStats.maxBytesInUse actionStats -
-           GHCStats.maxBytesInUse bootupStats)
+        (GHCStats.maxBytesInUse actionStats `subtracting`
+         GHCStats.maxBytesInUse bootupStats)
       maxOSBytes =
-        max
-          0
-          (GHCStats.maxOSBytes actionStats -
-           GHCStats.maxOSBytes bootupStats)
-  return (result,
-    ( fromIntegral actualBytes
-    , fromIntegral actionGCs
-    , fromIntegral liveBytes
-    , fromIntegral maxBytes
-    , fromIntegral maxOSBytes
-    ))
+        (GHCStats.maxOSBytes actionStats `subtracting`
+            GHCStats.maxOSBytes bootupStats)
+  return (result, (actualBytes, actionGCs, liveBytes, maxBytes, maxOSBytes))
+
+subtracting :: (Ord p, Num p) => p -> p -> p
+subtracting x y =
+  if x > y
+    then x - y
+    else 0
 
 -- | Weigh an IO action. This function is based on `weighActionResult`, which is
 --   heavily documented inside.
@@ -463,7 +460,7 @@ weighAction
   :: (NFData a)
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (Int64,Int64,Int64,Int64,Int64) -- ^ Bytes allocated and garbage collections.
+  -> IO (Word64,Word32,Word64,Word64,Word64) -- ^ Bytes allocated and garbage collections.
 weighAction run !arg = snd <$> weighActionResult run arg
 
 -- | Weigh an IO action, and return the result. This function is heavily
@@ -472,7 +469,7 @@ weighActionResult
   :: (NFData a)
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (a, (Int64,Int64,Int64,Int64,Int64)) -- ^ Result, Bytes allocated and GCs.
+  -> IO (a, (Word64,Word32,Word64,Word64,Word64)) -- ^ Result, Bytes allocated and GCs.
 weighActionResult run !arg = do
   ghcStatsSizeInBytes <- GHCStats.getGhcStatsSizeInBytes
   performGC
@@ -487,36 +484,36 @@ weighActionResult run !arg = do
   !actionStats <- GHCStats.getStats
   let reflectionGCs = 1 -- We performed an additional GC.
       actionBytes =
-        (GHCStats.totalBytesAllocated actionStats -
-         GHCStats.totalBytesAllocated bootupStats) -
+        (GHCStats.totalBytesAllocated actionStats `subtracting`
+         GHCStats.totalBytesAllocated bootupStats) `subtracting`
            -- We subtract the size of "bootupStats", which will be
            -- included after we did the performGC.
         fromIntegral ghcStatsSizeInBytes
       actionGCs =
-        GHCStats.gcCount actionStats - GHCStats.gcCount bootupStats -
+        GHCStats.gcCount actionStats `subtracting` GHCStats.gcCount bootupStats `subtracting`
         reflectionGCs
          -- If overheadBytes is too large, we conservatively just
          -- return zero. It's not perfect, but this library is for
          -- measuring large quantities anyway.
       actualBytes = max 0 actionBytes
       liveBytes =
-        max 0 (GHCStats.liveBytes actionStats - GHCStats.liveBytes bootupStats)
+        max 0 (GHCStats.liveBytes actionStats `subtracting` GHCStats.liveBytes bootupStats)
       maxBytes =
         max
           0
-          (GHCStats.maxBytesInUse actionStats -
+          (GHCStats.maxBytesInUse actionStats `subtracting`
            GHCStats.maxBytesInUse bootupStats)
       maxOSBytes =
         max
           0
-          (GHCStats.maxOSBytes actionStats -
+          (GHCStats.maxOSBytes actionStats `subtracting`
            GHCStats.maxOSBytes bootupStats)
   return (result,
-    ( fromIntegral actualBytes
-    , fromIntegral actionGCs
-    , fromIntegral liveBytes
-    , fromIntegral maxBytes
-    , fromIntegral maxOSBytes
+    (  actualBytes
+    ,  actionGCs
+    ,  liveBytes
+    ,  maxBytes
+    ,  maxOSBytes
     ))
 
 --------------------------------------------------------------------------------

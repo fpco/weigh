@@ -15,35 +15,10 @@ module Weigh.GHCStats
   )
   where
 
-#if __GLASGOW_HASKELL__ < 802
-import Data.Int
-#else
-import Data.Int
 import Data.Word
-#endif
 import GHC.Stats
 import System.Mem
 
-#if __GLASGOW_HASKELL__ < 802
--- | Get GHC's statistics.
-getStats :: IO GCStats
-getStats = getGCStats
-
-gcCount :: GCStats -> Int64
-gcCount = numGcs
-
-totalBytesAllocated :: GCStats -> Int64
-totalBytesAllocated = bytesAllocated
-
-liveBytes :: GCStats -> Int64
-liveBytes = currentBytesUsed
-
-maxBytesInUse :: GCStats -> Int64
-maxBytesInUse = maxBytesUsed
-
-maxOSBytes :: GCStats -> Int64
-maxOSBytes = const 0
-#else
 -- | Get GHC's statistics.
 getStats :: IO RTSStats
 getStats = getRTSStats
@@ -62,10 +37,9 @@ maxBytesInUse = max_live_bytes
 
 maxOSBytes :: RTSStats -> Word64
 maxOSBytes = max_mem_in_use_bytes
-#endif
 
 -- | Get the size of a 'RTSStats' object in bytes.
-getGhcStatsSizeInBytes :: IO Int64
+getGhcStatsSizeInBytes :: IO Word64
 getGhcStatsSizeInBytes = do
   s1 <- oneGetStats
   s2 <- twoGetStats
