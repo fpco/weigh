@@ -1,6 +1,7 @@
-0.0.15:
+0.0.16:
 	* Add MaxOS parameter to indicate memory in use by RTS
 	* Add haddock docmentation to the 'Column' type
+	* Fix bug in treating words as int, use only Word as reported by GHC.
 
 0.0.14:
 	* Use the correct data source for final live bytes total
