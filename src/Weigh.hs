@@ -76,6 +76,7 @@ import Control.Applicative
 import Control.Arrow
 import Control.DeepSeq
 import Control.Monad.State
+import Criterion.Measurement
 import qualified Data.Foldable as Foldable
 import qualified Data.List as List
 import Data.List.Split
@@ -107,6 +108,7 @@ data Column
   | MaxOS     -- ^ Maximum memory in use by the RTS. Valid only for
               -- GHC >= 8.2.2. For unsupported GHC, this is reported
               -- as 0.
+  | WallTime  -- ^ Rough execution time. For general indication, not a benchmark tool.
   deriving (Show, Eq, Enum)
 
 -- | Weigh configuration.
@@ -132,6 +134,7 @@ data Weight =
          ,weightLiveBytes :: !Word64
          ,weightMaxBytes :: !Word64
          ,weightMaxOSBytes :: !Word64
+         ,weightWallTime :: !Double
          }
   deriving (Read,Show)
 
@@ -339,10 +342,13 @@ weighDispatch args cases =
         Just act -> do
           case act of
             Action !run arg _ _ -> do
+              initializeTime
+              start <- getTime
               (bytes, gcs, liveBytes, maxByte, maxOSBytes) <-
                 case run of
                   Right f -> weighFunc f arg
                   Left m -> weighAction m arg
+              end <- getTime
               writeFile
                 fp
                 (show
@@ -353,6 +359,7 @@ weighDispatch args cases =
                     , weightLiveBytes = liveBytes
                     , weightMaxBytes = maxByte
                     , weightMaxOSBytes = maxOSBytes
+                    , weightWallTime = end - start
                     }))
           return Nothing
     _ -> fmap Just (Traversable.traverse (Traversable.traverse fork) cases)
@@ -568,6 +575,7 @@ reportTabular config = tabled
       , (Check, (True, "Check"))
       , (Max, (False, "Max"))
       , (MaxOS, (False, "MaxOS"))
+      , (WallTime, (False, "Wall Time"))
       ]
     toRow (w, err) =
       [ (Case, (True, takeLastAfterBk $ weightLabel w))
@@ -576,6 +584,7 @@ reportTabular config = tabled
       , (Live, (False, commas (weightLiveBytes w)))
       , (Max, (False, commas (weightMaxBytes w)))
       , (MaxOS, (False, commas (weightMaxOSBytes w)))
+      , (WallTime, (False, printf "%.3fs" (weightWallTime w)))
       , ( Check
         , ( True
           , case err of

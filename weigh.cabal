@@ -1,5 +1,5 @@
 name:                weigh
-version:             0.0.16
+version:             0.0.17
 synopsis:            Measure allocations of a Haskell functions/values
 description:         Please see README.md
 homepage:            https://github.com/fpco/weigh#readme
@@ -26,13 +26,14 @@ library
                      , split
                      , temporary
                      , ghc >= 8.2.1
+                     , criterion-measurement
   default-language:    Haskell2010
 
 test-suite weigh-test
   default-language:    Haskell2010
   type: exitcode-stdio-1.0
   hs-source-dirs: src/test
-  ghc-options: -O2
+  ghc-options: -O2 -Wall
   main-is: Main.hs
   build-depends: base
                , weigh
