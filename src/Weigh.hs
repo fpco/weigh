@@ -109,6 +109,7 @@ data Column
   | MaxOS     -- ^ Maximum memory in use by the RTS. Valid only for
               -- GHC >= 8.2.2. For unsupported GHC, this is reported
               -- as 0.
+  | MaxRss    -- ^ Maximum residency memory in use (via OS)
   | WallTime  -- ^ Rough execution time. For general indication, not a benchmark tool.
   deriving (Show, Eq, Enum)
 
@@ -585,6 +586,7 @@ reportTabular config = tabled
       , (Check, (True, "Check"))
       , (Max, (False, "Max"))
       , (MaxOS, (False, "MaxOS"))
+      , (MaxRss, (False, "MaxRss"))
       , (WallTime, (False, "Wall Time"))
       ]
     toRow (w, err) =
@@ -594,6 +596,7 @@ reportTabular config = tabled
       , (Live, (False, commas (weightLiveBytes w)))
       , (Max, (False, commas (weightMaxBytes w)))
       , (MaxOS, (False, commas (weightMaxOSBytes w)))
+      , (MaxRss, (False, commas (weightMaxRssBytes w)))
       , (WallTime, (False, printf "%.3fs" (weightWallTime w)))
       , ( Check
         , ( True
