@@ -531,7 +531,7 @@ weighActionResult run !arg = do
     ,  liveBytes
     ,  maxBytes
     ,  maxOSBytes
-    , maxRssBytes
+    ,  maxRssBytes
     ))
 
 --------------------------------------------------------------------------------
