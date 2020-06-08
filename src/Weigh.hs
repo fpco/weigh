@@ -254,7 +254,7 @@ func' name !f (force -> !x) = validateFunc name f x (const Nothing)
 -- Implemented in terms of 'validateAction'.
 io :: (NFData a)
    => String      -- ^ Name of the case.
-   -> (b -> IO a) -- ^ Aciton that does some IO to measure.
+   -> (b -> IO a) -- ^ Action that does some IO to measure.
    -> b           -- ^ Argument to that function.
    -> Weigh ()
 io name !f !x = validateAction name f x (const Nothing)
