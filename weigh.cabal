@@ -19,6 +19,7 @@ library
   ghc-options:         -Wall -O2
   exposed-modules:     Weigh
   other-modules:       Weigh.GHCStats
+                     , Weigh.OsStats
   build-depends:       base >= 4.7 && < 5
                      , process
                      , deepseq
