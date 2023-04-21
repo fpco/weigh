@@ -75,6 +75,7 @@ module Weigh
 import Control.Applicative
 import Control.Arrow
 import Control.DeepSeq
+import Control.Monad (unless)
 import Control.Monad.State
 import Criterion.Measurement
 import qualified Data.Foldable as Foldable
