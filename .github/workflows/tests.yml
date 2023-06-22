@@ -18,6 +18,24 @@ jobs:
         include:
         - os: ubuntu-latest
           stack-yaml: stack.yaml
+          resolver: lts-21
+        - os: macos-latest
+          stack-yaml: stack.yaml
+          resolver: lts-21
+        - os: windows-latest
+          stack-yaml: stack.yaml
+          resolver: lts-21
+        - os: ubuntu-latest
+          stack-yaml: stack.yaml
+          resolver: lts-20
+        - os: macos-latest
+          stack-yaml: stack.yaml
+          resolver: lts-20
+        - os: windows-latest
+          stack-yaml: stack.yaml
+          resolver: lts-20
+        - os: ubuntu-latest
+          stack-yaml: stack.yaml
           resolver: lts-19
         - os: macos-latest
           stack-yaml: stack.yaml
