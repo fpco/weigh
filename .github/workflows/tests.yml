@@ -24,7 +24,7 @@ jobs:
           resolver: lts-19
         - os: windows-latest
           stack-yaml: stack.yaml
-          resolver: lts-18
+          resolver: lts-19
 
     steps:
       - name: Clone project
