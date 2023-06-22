@@ -1,3 +1,6 @@
+0.0.17:
+	* Changes to make compatible for GHC 9.6
+
 0.0.16:
 	* Add MaxOS parameter to indicate memory in use by RTS
 	* Add haddock docmentation to the 'Column' type
