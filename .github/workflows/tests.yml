@@ -1,0 +1,75 @@
+name: Tests
+
+on:
+    pull_request:
+    push:
+      branches:
+      - master
+
+jobs:
+  build:
+    name: CI
+    runs-on: ${{ matrix.os }}
+    env:
+      STACK_ROOT: ${{ github.workspace }}/.stack
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - os: ubuntu-latest
+          stack-yaml: stack.yaml
+          resolver: lts-21
+        - os: macos-latest
+          stack-yaml: stack.yaml
+          resolver: lts-21
+        - os: windows-latest
+          stack-yaml: stack.yaml
+          resolver: lts-21
+        - os: ubuntu-latest
+          stack-yaml: stack.yaml
+          resolver: lts-20
+        - os: macos-latest
+          stack-yaml: stack.yaml
+          resolver: lts-20
+        - os: windows-latest
+          stack-yaml: stack.yaml
+          resolver: lts-20
+        - os: ubuntu-latest
+          stack-yaml: stack.yaml
+          resolver: lts-19
+        - os: macos-latest
+          stack-yaml: stack.yaml
+          resolver: lts-19
+        - os: windows-latest
+          stack-yaml: stack.yaml
+          resolver: lts-19
+
+    steps:
+      - name: Clone project
+        uses: actions/checkout@v2
+        with:
+          submodules: 'true'
+
+      - name: Cache dependencies
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.stack
+            ${{ github.workspace }}/.stack
+          key: ${{ runner.os }}-${{ matrix.resolver }}-haskell-${{ hashFiles('stack.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.resolver }}-haskell-
+
+      - name: Build and run tests
+        shell: bash
+        run: |
+            set -ex
+            if [ "$RUNNER_OS" == "Linux" ] || [ "$RUNNER_OS" == "macOS" ]; then
+                curl -sSL https://get.haskellstack.org/ | sh -s - -f
+            fi
+            stack test --no-terminal --stack-yaml=${{ matrix.stack-yaml }} --resolver=${{ matrix.resolver }}
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          generate_release_notes: true

@@ -75,7 +75,9 @@ module Weigh
 import Control.Applicative
 import Control.Arrow
 import Control.DeepSeq
+#if MIN_VERSION_base(4,18,0)
 import Control.Monad (unless)
+#endif
 import Control.Monad.State
 import Criterion.Measurement
 import qualified Data.Foldable as Foldable
