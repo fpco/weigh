@@ -1,4 +1,4 @@
-# weigh [![Build Status](https://travis-ci.org/fpco/weigh.svg)](https://travis-ci.org/fpco/weigh)
+# weigh [![Tests](https://github.com/fpco/weigh/actions/workflows/tests.yml/badge.svg)](https://github.com/fpco/weigh/actions/workflows/tests.yml)
 
 Measures the memory usage of a Haskell value or function
 
