@@ -96,6 +96,7 @@ import System.Mem
 import System.Process
 import Text.Printf
 import qualified Weigh.GHCStats as GHCStats
+import qualified Weigh.OsStats as OsStats
 
 --------------------------------------------------------------------------------
 -- Types
@@ -111,6 +112,7 @@ data Column
   | MaxOS     -- ^ Maximum memory in use by the RTS. Valid only for
               -- GHC >= 8.2.2. For unsupported GHC, this is reported
               -- as 0.
+  | MaxRss    -- ^ Maximum residency memory in use (via OS)
   | WallTime  -- ^ Rough execution time. For general indication, not a benchmark tool.
   deriving (Show, Eq, Enum)
 
@@ -137,6 +139,7 @@ data Weight =
          ,weightLiveBytes :: !Word64
          ,weightMaxBytes :: !Word64
          ,weightMaxOSBytes :: !Word64
+         ,weightMaxRssBytes :: !Word64
          ,weightWallTime :: !Double
          }
   deriving (Read,Show)
@@ -347,7 +350,7 @@ weighDispatch args cases =
             Action !run arg _ _ -> do
               initializeTime
               start <- getTime
-              (bytes, gcs, liveBytes, maxByte, maxOSBytes) <-
+              (bytes, gcs, liveBytes, maxByte, maxOSBytes, maxRssBytes) <-
                 case run of
                   Right f -> weighFunc f arg
                   Left m -> weighAction m arg
@@ -362,6 +365,7 @@ weighDispatch args cases =
                     , weightLiveBytes = liveBytes
                     , weightMaxBytes = maxByte
                     , weightMaxOSBytes = maxOSBytes
+                    , weightMaxRssBytes = maxRssBytes
                     , weightWallTime = end - start
                     }))
           return Nothing
@@ -411,7 +415,7 @@ weighFunc
   :: (NFData a)
   => (b -> a)         -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (Word64,Word32,Word64,Word64,Word64) -- ^ Bytes allocated and garbage collections.
+  -> IO (Word64,Word32,Word64,Word64,Word64,Word64) -- ^ Bytes allocated and garbage collections.
 weighFunc run !arg = snd <$> weighFuncResult run arg
 
 -- | Weigh a pure function and return the result. This function is heavily
@@ -420,12 +424,13 @@ weighFuncResult
   :: (NFData a)
   => (b -> a)         -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (a, (Word64,Word32,Word64,Word64,Word64)) -- ^ Result, Bytes allocated, GCs.
+  -> IO (a, (Word64,Word32,Word64,Word64,Word64,Word64)) -- ^ Result, Bytes allocated, GCs.
 weighFuncResult run !arg = do
   ghcStatsSizeInBytes <- GHCStats.getGhcStatsSizeInBytes
   performGC
      -- The above forces getStats data to be generated NOW.
   !bootupStats <- GHCStats.getStats
+  !bootupTotalRssInBytes <- OsStats.getVmRss
      -- We need the above to subtract "program startup" overhead. This
      -- operation itself adds n bytes for the size of GCStats, but we
      -- subtract again that later.
@@ -433,6 +438,7 @@ weighFuncResult run !arg = do
   performGC
      -- The above forces getStats data to be generated NOW.
   !actionStats <- GHCStats.getStats
+  !actionTotalRssInBytes <- OsStats.getVmRss
   let reflectionGCs = 1 -- We performed an additional GC.
       actionBytes =
         (GHCStats.totalBytesAllocated actionStats `subtracting`
@@ -456,7 +462,8 @@ weighFuncResult run !arg = do
       maxOSBytes =
         (GHCStats.maxOSBytes actionStats `subtracting`
             GHCStats.maxOSBytes bootupStats)
-  return (result, (actualBytes, actionGCs, liveBytes, maxBytes, maxOSBytes))
+      maxRssBytes = actionTotalRssInBytes `subtracting` bootupTotalRssInBytes
+  return (result, (actualBytes, actionGCs, liveBytes, maxBytes, maxOSBytes, maxRssBytes))
 
 subtracting :: (Ord p, Num p) => p -> p -> p
 subtracting x y =
@@ -470,7 +477,7 @@ weighAction
   :: (NFData a)
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (Word64,Word32,Word64,Word64,Word64) -- ^ Bytes allocated and garbage collections.
+  -> IO (Word64,Word32,Word64,Word64,Word64,Word64) -- ^ Bytes allocated and garbage collections.
 weighAction run !arg = snd <$> weighActionResult run arg
 
 -- | Weigh an IO action, and return the result. This function is heavily
@@ -479,12 +486,13 @@ weighActionResult
   :: (NFData a)
   => (b -> IO a)      -- ^ A function whose memory use we want to measure.
   -> b                -- ^ Argument to the function. Doesn't have to be forced.
-  -> IO (a, (Word64,Word32,Word64,Word64,Word64)) -- ^ Result, Bytes allocated and GCs.
+  -> IO (a, (Word64,Word32,Word64,Word64,Word64,Word64)) -- ^ Result, Bytes allocated and GCs.
 weighActionResult run !arg = do
   ghcStatsSizeInBytes <- GHCStats.getGhcStatsSizeInBytes
   performGC
      -- The above forces getStats data to be generated NOW.
   !bootupStats <- GHCStats.getStats
+  !bootupTotalRssInBytes <- OsStats.getVmRss
      -- We need the above to subtract "program startup" overhead. This
      -- operation itself adds n bytes for the size of GCStats, but we
      -- subtract again that later.
@@ -492,6 +500,7 @@ weighActionResult run !arg = do
   performGC
      -- The above forces getStats data to be generated NOW.
   !actionStats <- GHCStats.getStats
+  !actionTotalRssInBytes <- OsStats.getVmRss
   let reflectionGCs = 1 -- We performed an additional GC.
       actionBytes =
         (GHCStats.totalBytesAllocated actionStats `subtracting`
@@ -518,12 +527,14 @@ weighActionResult run !arg = do
           0
           (GHCStats.maxOSBytes actionStats `subtracting`
            GHCStats.maxOSBytes bootupStats)
+      maxRssBytes = actionTotalRssInBytes `subtracting` bootupTotalRssInBytes
   return (result,
     (  actualBytes
     ,  actionGCs
     ,  liveBytes
     ,  maxBytes
     ,  maxOSBytes
+    ,  maxRssBytes
     ))
 
 --------------------------------------------------------------------------------
@@ -578,6 +589,7 @@ reportTabular config = tabled
       , (Check, (True, "Check"))
       , (Max, (False, "Max"))
       , (MaxOS, (False, "MaxOS"))
+      , (MaxRss, (False, "MaxRss"))
       , (WallTime, (False, "Wall Time"))
       ]
     toRow (w, err) =
@@ -587,6 +599,7 @@ reportTabular config = tabled
       , (Live, (False, commas (weightLiveBytes w)))
       , (Max, (False, commas (weightMaxBytes w)))
       , (MaxOS, (False, commas (weightMaxOSBytes w)))
+      , (MaxRss, (False, commas (weightMaxRssBytes w)))
       , (WallTime, (False, printf "%.3fs" (weightWallTime w)))
       , ( Check
         , ( True
