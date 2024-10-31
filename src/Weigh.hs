@@ -3,7 +3,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -75,10 +74,8 @@ module Weigh
 import Control.Applicative
 import Control.Arrow
 import Control.DeepSeq
-#if MIN_VERSION_base(4,18,0)
 import Control.Monad (unless)
-#endif
-import Control.Monad.State
+import Control.Monad.State (State, execState, get, gets, modify)
 import Criterion.Measurement
 import qualified Data.Foldable as Foldable
 import qualified Data.List as List
