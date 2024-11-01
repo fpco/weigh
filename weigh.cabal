@@ -28,7 +28,7 @@ library
                      , criterion-measurement
   default-language:    Haskell2010
   if impl(ghc < 8.2.1)
-    buildable: false
+    buildable: False
 
 test-suite weigh-test
   default-language:    Haskell2010
