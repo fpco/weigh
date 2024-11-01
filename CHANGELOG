@@ -1,3 +1,6 @@
+0.0.18:
+	* Fix compatibility with `mtl`, whenever different version from the one that is wired with ghc is used.
+
 0.0.17:
 	* Changes to make compatible for GHC 9.6
 

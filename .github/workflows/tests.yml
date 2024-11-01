@@ -37,7 +37,7 @@ jobs:
         - os: ubuntu-latest
           stack-yaml: stack.yaml
           resolver: lts-19
-        - os: macos-latest
+        - os: macos-13
           stack-yaml: stack.yaml
           resolver: lts-19
         - os: windows-latest
